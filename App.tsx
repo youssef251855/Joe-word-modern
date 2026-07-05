@@ -13,6 +13,8 @@ import AIAssistant from './components/AIAssistant';
 import { doc, getDoc, setDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { supabase } from './supabase';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface Heading {
   text: string;
@@ -464,9 +466,6 @@ const App: React.FC = () => {
       if (document.fonts) {
         await document.fonts.ready;
       }
-
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
 
       const isPortrait = pageLayout.orientation === 'portrait';
       const pdfWidthMm = isPortrait ? 210 : 297;
