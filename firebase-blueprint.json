@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "Document": {
+      "title": "Document",
+      "description": "A user's document.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The title of the document." },
+        "content": { "type": "string", "description": "The content of the document." },
+        "userId": { "type": "string", "description": "The ID of the user who owns the document." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "The creation timestamp." }
+      },
+      "required": ["title", "content", "userId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/documents/{documentId}": {
+      "schema": { "$ref": "Document" },
+      "description": "Collection of user documents."
+    }
+  }
+}
