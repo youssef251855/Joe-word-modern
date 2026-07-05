@@ -7,14 +7,16 @@ import { Slider } from './ui/slider';
 
 interface StatusBarProps {
   wordCount: number;
+  activePage: number;
+  totalPages: number;
 }
 
-const StatusBar: React.FC<StatusBarProps> = ({ wordCount }) => {
+const StatusBar: React.FC<StatusBarProps> = ({ wordCount, activePage, totalPages }) => {
   return (
     <div className="h-8 bg-[#f3f2f1] border-t border-slate-200 flex items-center justify-between px-4 text-[11px] text-slate-600 select-none">
       <div className="flex items-center gap-4 h-full">
         <div className="flex items-center gap-1 hover:bg-slate-200 px-2 h-full cursor-pointer">
-          <span>Page 1 of 1</span>
+          <span>الصفحة {activePage} من {totalPages}</span>
         </div>
         <div className="flex items-center gap-1 hover:bg-slate-200 px-2 h-full cursor-pointer">
           <span>{wordCount} words</span>

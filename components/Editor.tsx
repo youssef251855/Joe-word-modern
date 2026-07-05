@@ -76,6 +76,39 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
       quillInstance.current.on('selection-change', (range) => {
         if (range) {
           lastSelection.current = range;
+
+          // Calculate active page number dynamically based on cursor position
+          try {
+            const editorRoot = quillInstance.current?.root;
+            if (editorRoot) {
+              const [leaf] = quillInstance.current!.getLeaf(range.index);
+              if (leaf && leaf.domNode) {
+                let domNode = leaf.domNode;
+                // Walk up to find the top level block under editorRoot
+                while (domNode.parentNode && domNode.parentNode !== editorRoot) {
+                  domNode = domNode.parentNode;
+                }
+                
+                // Now find how many page breaks are before this domNode
+                const allNodes = Array.from(editorRoot.childNodes);
+                const nodeIndex = allNodes.indexOf(domNode as any);
+                if (nodeIndex !== -1) {
+                  let pageBreaksBefore = 0;
+                  for (let i = 0; i < nodeIndex; i++) {
+                    const child = allNodes[i];
+                    if (child instanceof HTMLElement && (child.classList.contains('page-break') || child.tagName === 'HR')) {
+                      pageBreaksBefore++;
+                    }
+                  }
+                  const activePage = pageBreaksBefore + 1;
+                  const event = new CustomEvent('editor-active-page-change', { detail: { activePage } });
+                  window.dispatchEvent(event);
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Error calculating active page:", err);
+          }
         }
       });
 
@@ -310,11 +343,55 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
           .page-break { margin: 2rem -2rem; }
         }
         @media print {
-          .page-break {
-            border: none;
-            margin: 0;
-            height: 0;
-            page-break-after: always;
+          header, footer, nav, aside, button, .fixed, .absolute, .shrink-0,
+          .ql-toolbar, .image-sidebar, .navigation-pane, .ai-assistant-container,
+          .ribbon-container, .top-bar, [class*="Header"], [class*="Ribbon"], 
+          [class*="AIAssistant"], [class*="StatusBar"] {
+            display: none !important;
+          }
+          
+          body, html {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-shadow: none !important;
+            background: transparent !important;
+          }
+
+          .ql-container.ql-snow {
+            border: none !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+
+          .ql-editor {
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+            height: auto !important;
+            background-color: transparent !important;
+            color: #000000 !important;
+          }
+
+          .page-break, hr {
+            display: block !important;
+            height: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            page-break-after: always !important;
+            break-after: page !important;
+            visibility: hidden !important;
           }
         }
         table {

@@ -55,6 +55,11 @@ const App: React.FC = () => {
   const [isDictating, setIsDictating] = useState<boolean>(false);
   const [showTemplateModal, setShowTemplateModal] = useState<boolean>(false);
   const [showStatsModal, setShowStatsModal] = useState<boolean>(false);
+  const [showLongDocModal, setShowLongDocModal] = useState<boolean>(false);
+  const [pendingPageCount, setPendingPageCount] = useState<number>(0);
+  const [pendingPages, setPendingPages] = useState<Node[][] | null>(null);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [activePage, setActivePage] = useState<number>(1);
   const recognitionRef = useRef<any>(null);
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
   const [pageLayout, setPageLayout] = useState<{
@@ -85,6 +90,101 @@ const App: React.FC = () => {
     }));
     setHeadings(extractedHeadings);
   }, [content]);
+
+  useEffect(() => {
+    if (!content) {
+      setTotalPages(1);
+      return;
+    }
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'text/html');
+      const childNodes = Array.from(doc.body.childNodes);
+      
+      let pageCount = 0;
+      let currentHeightSum = 0;
+      const isPortrait = pageLayout.orientation === 'portrait';
+      const maxPageHeight = isPortrait ? 900 : 600;
+
+      const getEstimatedHeight = (node: Node): number => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent?.trim() || '';
+          if (!text) return 0;
+          return Math.max(20, Math.ceil(text.length / 80) * 24);
+        }
+        if (node instanceof HTMLElement) {
+          if (node.classList.contains('page-break') || node.tagName === 'HR') {
+            return -1; // Manual page break
+          }
+          const tagName = node.tagName.toLowerCase();
+          let height = 0;
+          if (tagName.startsWith('h')) {
+            height += 40;
+          } else if (tagName === 'img') {
+            height += 300;
+          } else if (tagName === 'table') {
+            height += 200;
+          } else {
+            const textLen = node.textContent?.trim().length || 0;
+            if (textLen === 0) {
+              const images = node.querySelectorAll('img');
+              if (images.length > 0) {
+                height += images.length * 300;
+              } else {
+                height += 24;
+              }
+            } else {
+              height += Math.max(24, Math.ceil(textLen / 70) * 24);
+              const images = node.querySelectorAll('img');
+              if (images.length > 0) {
+                height += images.length * 300;
+              }
+            }
+          }
+          height += 16;
+          return height;
+        }
+        return 0;
+      };
+
+      let hasContent = false;
+      for (const node of childNodes) {
+        const estHeight = getEstimatedHeight(node);
+        if (estHeight === -1) {
+          pageCount++;
+          currentHeightSum = 0;
+          hasContent = false;
+        } else {
+          hasContent = true;
+          if (currentHeightSum > 0 && currentHeightSum + estHeight > maxPageHeight) {
+            pageCount++;
+            currentHeightSum = estHeight;
+          } else {
+            currentHeightSum += estHeight;
+          }
+        }
+      }
+      if (hasContent || pageCount === 0) {
+        pageCount++;
+      }
+      
+      setTotalPages(pageCount);
+    } catch (err) {
+      console.error("Error updating total pages:", err);
+    }
+  }, [content, pageLayout]);
+
+  useEffect(() => {
+    const handleActivePageChange = (e: any) => {
+      if (e.detail && typeof e.detail.activePage === 'number') {
+        setActivePage(e.detail.activePage);
+      }
+    };
+    window.addEventListener('editor-active-page-change', handleActivePageChange);
+    return () => {
+      window.removeEventListener('editor-active-page-change', handleActivePageChange);
+    };
+  }, []);
 
   const handleSelectDocument = async (id: string) => {
     try {
@@ -354,47 +454,33 @@ const App: React.FC = () => {
     setIsDictating(true);
   };
 
-  const handleExportPdf = async () => {
-    const element = document.querySelector('.ql-editor') as HTMLElement;
-    if (!element) return;
-
+  const executeActualPdfExport = async (finalPages: Node[][]) => {
     setIsExporting(true);
-    setExportProgress({ current: 0, total: 0 });
+    setExportProgress({ current: 0, total: finalPages.length });
     setExportLink(null);
 
     try {
-      const { toPng } = await import('html-to-image');
+      // Ensure all web fonts are fully loaded prior to rendering
+      if (document.fonts) {
+        await document.fonts.ready;
+      }
+
+      const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
 
       const isPortrait = pageLayout.orientation === 'portrait';
       const pdfWidthMm = isPortrait ? 210 : 297;
       const pdfHeightMm = isPortrait ? 297 : 210;
 
-      // Group elements inside ql-editor into separate pages based on page-break (hr)
-      const childNodes = Array.from(element.childNodes);
-      const pages: Node[][] = [];
-      let currentPage: Node[] = [];
-
-      for (const node of childNodes) {
-        if (node instanceof HTMLElement && (node.classList.contains('page-break') || node.tagName === 'HR')) {
-          pages.push(currentPage);
-          currentPage = [];
-        } else {
-          currentPage.push(node);
-        }
-      }
-      pages.push(currentPage);
-
-      // Filter out pages that are completely empty, but make sure we have at least 1 page
-      const nonSeededPages = pages.filter(p => p.length > 0 || p.some(n => n.textContent?.trim() !== ''));
-      const finalPages = nonSeededPages.length > 0 ? nonSeededPages : [[]];
-
-      // Create a temporary container offscreen for rendering one page at a time.
-      // Doing this ensures we never exceed browser canvas/memory limits even with 250+ pages.
+      // Create a temporary container visible in viewport but fully hidden behind main elements (z-index -9999).
+      // WebKit and Safari demand the element be fully inside the viewport bounds for getBoundingClientRect()
+      // to yield correct dimensions and coordinates, preventing blank pages.
       const tempContainer = document.createElement('div');
       tempContainer.style.position = 'fixed';
-      tempContainer.style.left = '-9999px';
-      tempContainer.style.top = '-9999px';
+      tempContainer.style.left = '0px';
+      tempContainer.style.top = '0px';
+      tempContainer.style.zIndex = '-9999';
+      tempContainer.style.opacity = '1';
       tempContainer.style.backgroundColor = '#ffffff';
       
       const widthPx = isPortrait ? 794 : 1123;
@@ -415,24 +501,66 @@ const App: React.FC = () => {
         tempContainer.style.padding = '120px';
       }
 
-      tempContainer.style.fontFamily = "'Cairo', 'Inter', sans-serif";
+      tempContainer.style.fontFamily = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
       tempContainer.style.direction = 'rtl';
       tempContainer.style.textAlign = 'right';
-      tempContainer.className = 'ql-editor printable-area';
+      tempContainer.className = 'ql-editor printable-area export-pdf-container';
 
-      // Append any stylesheets from the document to keep the styling
-      const styles = document.querySelectorAll('style, link[rel="stylesheet"]');
-      const clonedStyles: Node[] = [];
-      styles.forEach(s => {
-        const clone = s.cloneNode(true);
-        document.body.appendChild(clone);
-        clonedStyles.push(clone);
-      });
-
+      // Ensure appropriate typography, black text color on white background, normal letter spacing, and proper ligatures
+      const styleTag = document.createElement('style');
+      styleTag.id = 'pdf-export-styles';
+      styleTag.innerHTML = `
+        .export-pdf-container {
+          background-color: #ffffff !important;
+          color: #000000 !important;
+        }
+        .export-pdf-container, .export-pdf-container * {
+          color: #000000 !important;
+          background-color: transparent !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif !important;
+          letter-spacing: normal !important;
+          word-spacing: normal !important;
+          font-variant-ligatures: common-ligatures !important;
+          text-rendering: optimizeLegibility !important;
+          -webkit-font-smoothing: antialiased !important;
+          direction: rtl !important;
+          text-align: right !important;
+        }
+        .export-pdf-container img {
+          max-width: 100% !important;
+          height: auto !important;
+          display: block !important;
+        }
+        .export-pdf-container .page-break {
+          display: none !important;
+        }
+      `;
+      document.head.appendChild(styleTag);
       document.body.appendChild(tempContainer);
 
       const pdf = new jsPDF(isPortrait ? 'p' : 'l', 'mm', 'a4');
       setExportProgress({ current: 1, total: finalPages.length });
+
+      // Dynamically select pixel ratio and delay based on document size to prevent mobile canvas crashes
+      const pageCount = finalPages.length;
+      let pixelRatio = 1.5;
+      let delayMs = 100;
+      
+      if (pageCount > 100) {
+        pixelRatio = 0.6; // Low memory footprint for massive documents
+        delayMs = 40;
+      } else if (pageCount > 50) {
+        pixelRatio = 0.8;
+        delayMs = 60;
+      } else if (pageCount > 20) {
+        pixelRatio = 1.0;
+        delayMs = 100;
+      } else if (pageCount > 10) {
+        pixelRatio = 1.2;
+        delayMs = 100;
+      }
 
       for (let i = 0; i < finalPages.length; i++) {
         tempContainer.innerHTML = '';
@@ -446,13 +574,24 @@ const App: React.FC = () => {
         setExportProgress({ current: i + 1, total: finalPages.length });
 
         // Let images or render cycles settle
-        await new Promise(r => setTimeout(r, 85));
+        await new Promise(r => setTimeout(r, delayMs));
 
-        // Generate the page screenshot with safe aspect ratio
-        const pageDataUrl = await toPng(tempContainer, { 
-          quality: 0.95, 
-          pixelRatio: 1.5
+        // Use html2canvas to render the page to a canvas.
+        const canvas = await html2canvas(tempContainer, {
+          scale: pixelRatio,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          width: widthPx,
+          height: heightPx,
+          allowTaint: true
         });
+
+        const pageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+        // Force free canvas memory immediately to protect iOS/Safari against graphics leaks
+        canvas.width = 0;
+        canvas.height = 0;
 
         if (i > 0) {
           pdf.addPage();
@@ -462,10 +601,12 @@ const App: React.FC = () => {
       }
 
       // Cleanup temp container and temporary styles
-      document.body.removeChild(tempContainer);
-      clonedStyles.forEach(s => {
-        if (s.parentNode) s.parentNode.removeChild(s);
-      });
+      if (tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer);
+      }
+      if (styleTag.parentNode) {
+        styleTag.parentNode.removeChild(styleTag);
+      }
 
       const pdfBlob = pdf.output('blob');
       const safeTitle = (title || 'document').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -521,6 +662,95 @@ const App: React.FC = () => {
       setIsExporting(false);
       setExportProgress(null);
     }
+  };
+
+  const handleExportPdf = async () => {
+    const element = document.querySelector('.ql-editor') as HTMLElement;
+    if (!element) return;
+
+    // Heuristic page estimator to split extremely long text without manual page breaks
+    const getEstimatedHeight = (node: Node): number => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent?.trim() || '';
+        if (!text) return 0;
+        return Math.max(20, Math.ceil(text.length / 80) * 24);
+      }
+      if (node instanceof HTMLElement) {
+        if (node.classList.contains('page-break') || node.tagName === 'HR') {
+          return -1; // Manual page break
+        }
+        const tagName = node.tagName.toLowerCase();
+        let height = 0;
+        if (tagName.startsWith('h')) {
+          height += 40;
+        } else if (tagName === 'img') {
+          height += 300;
+        } else if (tagName === 'table') {
+          height += 200;
+        } else {
+          const textLen = node.textContent?.trim().length || 0;
+          if (textLen === 0) {
+            const images = node.querySelectorAll('img');
+            if (images.length > 0) {
+              height += images.length * 300;
+            } else {
+              height += 24;
+            }
+          } else {
+            height += Math.max(24, Math.ceil(textLen / 70) * 24);
+            const images = node.querySelectorAll('img');
+            if (images.length > 0) {
+              height += images.length * 300;
+            }
+          }
+        }
+        height += 16;
+        return height;
+      }
+      return 0;
+    };
+
+    const isPortrait = pageLayout.orientation === 'portrait';
+    const childNodes = Array.from(element.childNodes);
+    const pages: Node[][] = [];
+    let currentPage: Node[] = [];
+    let currentHeightSum = 0;
+    const maxPageHeight = isPortrait ? 900 : 600;
+
+    for (const node of childNodes) {
+      const estHeight = getEstimatedHeight(node);
+      if (estHeight === -1) {
+        if (currentPage.length > 0) {
+          pages.push(currentPage);
+        }
+        currentPage = [];
+        currentHeightSum = 0;
+      } else {
+        if (currentPage.length > 0 && currentHeightSum + estHeight > maxPageHeight) {
+          pages.push(currentPage);
+          currentPage = [node];
+          currentHeightSum = estHeight;
+        } else {
+          currentPage.push(node);
+          currentHeightSum += estHeight;
+        }
+      }
+    }
+    if (currentPage.length > 0) {
+      pages.push(currentPage);
+    }
+
+    const nonSeededPages = pages.filter(p => p.length > 0 || p.some(n => n.textContent?.trim() !== ''));
+    const finalPages = nonSeededPages.length > 0 ? nonSeededPages : [[]];
+
+    if (finalPages.length > 15) {
+      setPendingPageCount(finalPages.length);
+      setPendingPages(finalPages);
+      setShowLongDocModal(true);
+      return;
+    }
+
+    await executeActualPdfExport(finalPages);
   };
 
   const handleSave = () => {
@@ -729,6 +959,7 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
+            <StatusBar wordCount={wordCount} activePage={activePage} totalPages={totalPages} />
           </div>
         )}
       </div>
@@ -791,6 +1022,53 @@ const App: React.FC = () => {
                 className="px-4 py-2 bg-primary-600 text-white hover:bg-primary-700 rounded-lg transition-colors"
               >
                 إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Long Document Export Modal */}
+      {showLongDocModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 max-w-lg w-full" dir="rtl">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              ⚠️ تنبيه: مستند طويل جداً ({pendingPageCount} صفحة)
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
+              لقد تم رصد أن المستند يحتوي على <strong>{pendingPageCount} صفحة</strong>. 
+              عند تصدير المستندات الطويلة جداً تلقائياً على المتصفح أو الهاتف، قد تنفد الذاكرة المخصصة للرسومات (Canvas Memory) وتظهر بعض الصفحات فارغة تماماً.
+              <br /><br />
+              <strong>الخيار الموصى به والأفضل بنسبة 100%:</strong>
+              <br />
+              انقر على <strong>"طباعة وحفظ كـ PDF"</strong> ثم اختر <strong>"حفظ بتنسيق PDF"</strong> من نافذة الطباعة التابعة لنظام هاتفك أو متصفحك. هذا يضمن الحصول على ملف ذي جودة متناهية وبنصوص حقيقية قابلة للنسخ والبحث بدون أي استهلاك لذاكرة الجهاز.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-end">
+              <button 
+                onClick={() => {
+                  setShowLongDocModal(false);
+                  handlePrint();
+                }}
+                className="bg-primary-600 text-white hover:bg-primary-700 px-4 py-2.5 rounded-lg font-medium transition-colors flex-1"
+              >
+                🖨️ طباعة وحفظ كـ PDF (موصى به للغاية)
+              </button>
+              <button 
+                onClick={() => {
+                  setShowLongDocModal(false);
+                  if (pendingPages) {
+                    executeActualPdfExport(pendingPages);
+                  }
+                }}
+                className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 px-4 py-2.5 rounded-lg font-medium transition-colors"
+              >
+                تصدير تلقائي على أي حال
+              </button>
+              <button 
+                onClick={() => setShowLongDocModal(false)}
+                className="bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 px-4 py-2.5 rounded-lg font-medium transition-colors"
+              >
+                إلغاء
               </button>
             </div>
           </div>
