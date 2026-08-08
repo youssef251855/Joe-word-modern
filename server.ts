@@ -50,6 +50,51 @@ async function startServer() {
     }
   });
 
+  app.post("/api/gemini/generate-image", async (req, res) => {
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        return res.status(400).json({ 
+          error: "مفتاح GEMINI_API_KEY غير متوفر في البيئة." 
+        });
+      }
+      const { prompt, aspectRatio = "3:4" } = req.body;
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite-image',
+        contents: {
+          parts: [
+            { text: prompt }
+          ]
+        },
+        config: {
+          imageConfig: {
+            aspectRatio,
+            imageSize: "1K"
+          }
+        }
+      });
+      
+      let imageUrl = null;
+      if (response.candidates && response.candidates[0].content.parts) {
+        for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+            imageUrl = `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}`;
+            break;
+          }
+        }
+      }
+      
+      if (imageUrl) {
+        res.json({ imageUrl });
+      } else {
+        res.status(500).json({ error: "لم يتم إنشاء أي صورة." });
+      }
+    } catch (error: any) {
+      console.error("Gemini API Error (Image):", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

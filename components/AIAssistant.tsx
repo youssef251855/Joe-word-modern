@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BotIcon, SparklesIcon, XIcon, CheckIcon, RefreshCwIcon, ChevronDownIcon, LayersIcon, BookOpenIcon, LanguagesIcon } from 'lucide-react';
+import { BotIcon, SparklesIcon, XIcon, CheckIcon, RefreshCwIcon, ChevronDownIcon, LayersIcon, BookOpenIcon, LanguagesIcon, ImageIcon } from 'lucide-react';
 import { EditorHandle } from './Editor';
 import { cn } from '../lib/utils';
 
@@ -16,13 +16,14 @@ interface AIAssistantProps {
 const AIAssistant: React.FC<AIAssistantProps> = ({ 
   editorRef, isOpen, onClose, documentContent, documentTitle, onUpdateTitle, onSetContent 
 }) => {
-  const [activeTab, setActiveTab] = useState<'chat' | 'selection' | 'document' | 'book'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'selection' | 'document' | 'book' | 'cover'>('chat');
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewAction, setPreviewAction] = useState<'replace' | 'insert' | 'title' | 'document'>('replace');
   
   // Book Generation state
+  const [bookType, setBookType] = useState('كتاب أكاديمي/تعليمي');
   const [bookName, setBookName] = useState('');
   const [bookElements, setBookElements] = useState('');
   const [bookLevel, setBookLevel] = useState('جامعي');
@@ -30,6 +31,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
   const [bookStyle, setBookStyle] = useState('شرح مفصل مع أمثلة');
   const [bookNotes, setBookNotes] = useState('');
   const [bookPages, setBookPages] = useState('3');
+  
+  // Cover Generation state
+  const [coverPrompt, setCoverPrompt] = useState('');
+  const [coverStyle, setCoverStyle] = useState('واقعي ومفصل');
   
   const handleGenerate = async (actionPrompt: string, systemInstruction?: string, actionType: 'replace' | 'insert' | 'title' | 'document' = 'replace') => {
     setIsLoading(true);
@@ -39,7 +44,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           prompt: actionPrompt,
-          systemInstruction: systemInstruction || "أنت مساعد ذكي متقدم في تحرير وتأليف المستندات وتنسيقها. أجب بالغة العربية، وقم بإرجاع النص المنسق باستخدام HTML نظيف ومباشر فقط ليتم عرضه في المستند مباشرة. يمنع منعاً باتاً إضافة أو استخدام علامات برمجة أو رموز أو اقتباسات برمجية مثل علامات الاقتباس الخلفية (```) أو تغليفات مثل ```html أو أي أكواد برمجية. نريد فقط رموز واضحة وعلامات ونصوصاً منسقة ومنظمة بدون أي كود برمجي. إذا كان المستند طويلاً أو يحتوي على فصول أو أقسام متعددة، أو إذا طُلب منك تقسيم الصفحات أو إدراج فاصل صفحات، فيجب عليك إدراج العلامة <hr class=\"page-break\" contenteditable=\"false\"> لإنشاء فواصل صفحات واضحة بين الفصول أو الأقسام ليظهر كل منها في صفحة مستقلة.",
+          systemInstruction: systemInstruction || "أنت مساعد ذكي متقدم في تحرير وتأليف المستندات وتنسيقها. أجب بالغة العربية، وقم بإرجاع النص المنسق باستخدام HTML نظيف ومباشر فقط ليتم عرضه في المستند مباشرة. يمنع منعاً باتاً إضافة أو استخدام علامات برمجة أو رموز أو اقتباسات برمجية مثل علامات الاقتباس الخلفية (\`\`\`) أو تغليفات مثل ```html أو أي أكواد برمجية. نريد فقط رموز واضحة وعلامات ونصوصاً منسقة ومنظمة بدون أي كود برمجي. إذا كان المستند طويلاً أو يحتوي على فصول أو أقسام متعددة، أو إذا طُلب منك تقسيم الصفحات أو إدراج فاصل صفحات، فيجب عليك إدراج العلامة <hr class=\"page-break\" contenteditable=\"false\"> لإنشاء فواصل صفحات واضحة بين الفصول أو الأقسام ليظهر كل منها في صفحة مستقلة.",
           model: "gemini-3.5-flash"
         })
       });
@@ -156,9 +161,47 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
     }
     
     const numPages = parseInt(bookPages) || 3;
-    const prompt = `أريد تأليف كتاب متكامل بعنوان "${bookName || 'بدون عنوان'}" بناءً على العناصر التالية:\n${bookElements}\n\nالمرحلة الدراسية/المستوى: ${bookLevel}\nالموضوع/المجال: ${bookSubject}\nأسلوب الشرح: ${bookStyle}${bookNotes.trim() ? `\nملاحظات إضافية: ${bookNotes}` : ''}\n\nعدد الصفحات المطلوب: ${numPages} صفحات.\n\nالرجاء كتابة محتوى الكتاب بالكامل بحيث يشمل:\n- مقدمة شاملة.\n- فصول الكتاب مع شرح أصلي وافٍ لكل عنصر.\n- أمثلة وتطبيقات عملية ورسوم توضيحية (باستخدام وصف للرسوم أو جداول).\n- ملخص لكل فصل.\n- تمارين واختبارات مع إجاباتها في نهاية الكتاب.\n\nاستخدم تنسيق HTML مهيكل بشكل جيد (h1, h2, p, ul, table, etc) بحيث يكون جاهزاً للمستند.\n\nهام جداً: يمنع منعاً باتاً كتابة أو عرض أو تغليف الرد بأقواس أو علامات برمجية مثل علامات الاقتباس الخلفية (\`\`\`) أو الكلمات الدلالية البرمجية. أرجع فقط نصوصاً منسقة بـ HTML نظيف وصالح مباشرة ليظهر كرموز ونصوص ووسوم واضحة للمستخدم دون أي كود برمجي ظاهر.\n\nيجب عليك تقسيم محتوى الكتاب بالتساوي ليتوزع على ${numPages} صفحات تماماً. لإنشاء صفحة جديدة، استخدم العلامة <hr class="page-break" contenteditable="false"> بالضبط كفاصل صفحات. يجب أن يحتوي الملف النهائي على ${numPages - 1} من فواصل الصفحات <hr class="page-break" contenteditable="false"> موزعة بشكل منطقي وعادل بين أجزاء وفصول الكتاب لتجعل الطول الإجمالي للكتاب ${numPages} صفحات منفصلة.`;
+    let actionPrompt = "";
     
-    handleGenerate(prompt, `أنت مؤلف كتب ومعلم خبير. اكتب محتوى غنياً، دقيقاً، ومنظماً جداً. أرجع HTML نظيف وصالح مباشرة للرد. يمنع منعاً باتاً إضافة أي كود برمجي أو علامات اقتباس خلفية (\`\`\`). يجب عليك تقسيم المحتوى إلى ${numPages} صفحات تماماً وإدراج العلامة <hr class="page-break" contenteditable="false"> لإنشاء فواصل صفحات واضحة ومستقلة بين الصفحات (بإجمالي ${numPages - 1} فواصل صفحات).`, 'document');
+    if (bookType === 'قصة/رواية') {
+      actionPrompt = `أريد تأليف قصة/رواية متكاملة بعنوان "${bookName || 'بدون عنوان'}" بناءً على الأفكار أو العناصر التالية:\n${bookElements}\n\nالفئة العمرية/المستوى: ${bookLevel}\nالنوع (خيال، مغامرة، دراما...): ${bookSubject}\nأسلوب السرد: ${bookStyle}${bookNotes.trim() ? `\nملاحظات إضافية: ${bookNotes}` : ''}\n\nعدد الصفحات المطلوب: ${numPages} صفحات.\n\nالرجاء كتابة محتوى القصة بالكامل بحيث يشمل:\n- مقدمة أو بداية مشوقة.\n- فصول وأحداث القصة متسلسلة بشكل واضح.\n- حوارات الشخصيات إن وجدت.\n- الخاتمة.\n\nاستخدم تنسيق HTML مهيكل بشكل جيد (h1, h2, p, etc) بحيث يكون جاهزاً للمستند.\n\nهام جداً: يمنع منعاً باتاً كتابة أو عرض الرد بأقواس أو علامات برمجية. أرجع فقط نصوصاً منسقة بـ HTML نظيف.\n\nيجب عليك تقسيم محتوى القصة بالتساوي ليتوزع على ${numPages} صفحات تماماً. لإنشاء صفحة جديدة، استخدم العلامة <hr class="page-break" contenteditable="false"> بالضبط كفاصل صفحات. يجب أن يحتوي الملف النهائي على ${numPages - 1} من فواصل الصفحات.`;
+    } else {
+      actionPrompt = `أريد تأليف كتاب تعليمي متكامل بعنوان "${bookName || 'بدون عنوان'}" بناءً على العناصر التالية:\n${bookElements}\n\nالمرحلة الدراسية/المستوى: ${bookLevel}\nالموضوع/المجال: ${bookSubject}\nأسلوب الشرح: ${bookStyle}${bookNotes.trim() ? `\nملاحظات إضافية: ${bookNotes}` : ''}\n\nعدد الصفحات المطلوب: ${numPages} صفحات.\n\nالرجاء كتابة محتوى الكتاب بالكامل بحيث يشمل بدقة:\n1. مقدمة شاملة.\n2. فصول الكتاب مع شرح أصلي وافٍ، وتضمين **أمثلة عملية واقعية ومفصلة** لكل مفهوم.\n3. ملخص لكل فصل.\n4. تمارين واختبارات مع إجاباتها النموذجية في نهاية الكتاب.\n\nاستخدم أنواعًا مختلفة حسب طبيعة المحتوى باستخدام تنسيق HTML مناسب (مثل الصناديق أو الأيقونات النصية):\n📘 تعريف → للمصطلحات والتعريفات.\n💡 ملحوظة → للمعلومات الإضافية المهمة.\n⚠️ تنبيه → للأخطاء الشائعة أو الأشياء التي يجب الانتباه إليها.\n⭐ معلومة مهمة → للمعلومات التي يجب حفظها.\n🧠 تذكر → للنقاط التي يحتاج الطالب إلى حفظها.\n❓ فكر → لسؤال يحفز الطالب على التفكير.\n📝 مثال تطبيقي مفصل → للأمثلة العملية.\n\nقواعد التصميم والتنسيق:\n- استخدم تنسيق HTML مهيكل بشكل جيد (h1, h2, p, ul, table, blockquote, div مع أنماط CSS مضمنة بسيطة للصناديق).\n- تسلسل بصري واضح، مسافات مناسبة، صناديق معلومات منظمة، وجداول دعم للغة العربية واتجاه RTL.\n\nهام جداً: يمنع منعاً باتاً كتابة أو عرض أو تغليف الرد بأقواس أو علامات برمجية مثل علامات الاقتباس الخلفية (\`\`\`). أرجع فقط نصوصاً منسقة بـ HTML نظيف وصالح مباشرة.\n\nيجب عليك تقسيم محتوى الكتاب بالتساوي ليتوزع على ${numPages} صفحات تماماً. لإنشاء صفحة جديدة، استخدم العلامة <hr class="page-break" contenteditable="false"> بالضبط كفاصل صفحات. يجب أن يحتوي الملف النهائي على ${numPages - 1} من فواصل الصفحات.`;
+    }
+    
+    handleGenerate(actionPrompt, `أنت مؤلف خبير. اكتب محتوى غنياً ومنظماً جداً. أرجع HTML نظيف وصالح مباشرة للرد. يمنع منعاً باتاً إضافة أي كود برمجي أو علامات اقتباس خلفية (\`\`\`). يجب عليك تقسيم المحتوى إلى ${numPages} صفحات تماماً وإدراج العلامة <hr class="page-break" contenteditable="false"> لإنشاء فواصل صفحات واضحة ومستقلة بين الصفحات (بإجمالي ${numPages - 1} فواصل صفحات).`, 'document');
+  };
+
+  const handleGenerateCover = async () => {
+    if (!coverPrompt.trim()) {
+      alert('يرجى إدخال وصف للغلاف.');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/gemini/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt: `تصميم غلاف كتاب: ${coverPrompt}. النمط: ${coverStyle}. ركز على تصميم غلاف فني واحترافي بدون أي نص أو كلمات مكتوبة في الصورة.`,
+          aspectRatio: "3:4"
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "فشل توليد الصورة");
+      }
+      
+      const imgHtml = `<div style="text-align: center;"><img src="${data.imageUrl}" alt="غلاف الكتاب" style="max-width: 100%; max-height: 800px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 24px;" /></div><hr class="page-break" contenteditable="false">`;
+      setPreviewContent(imgHtml);
+      setPreviewAction('insert');
+    } catch (err: any) {
+      alert("حدث خطأ أثناء معالجة طلبك: " + err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -178,21 +221,27 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
       <div className="flex border-b border-slate-200 dark:border-slate-700">
         <button 
           onClick={() => setActiveTab('chat')} 
-          className={cn("flex-1 py-2 text-sm font-medium border-b-2 transition-colors", activeTab === 'chat' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
+          className={cn("flex-1 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors", activeTab === 'chat' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
         >
           أوامر
         </button>
         <button 
           onClick={() => setActiveTab('selection')} 
-          className={cn("flex-1 py-2 text-sm font-medium border-b-2 transition-colors", activeTab === 'selection' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
+          className={cn("flex-1 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors", activeTab === 'selection' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
         >
-          التحديد
+          تحديد
         </button>
         <button 
           onClick={() => setActiveTab('book')} 
-          className={cn("flex-1 py-2 text-sm font-medium border-b-2 transition-colors", activeTab === 'book' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
+          className={cn("flex-1 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors", activeTab === 'book' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
         >
-          تأليف كتاب
+          تأليف
+        </button>
+        <button 
+          onClick={() => setActiveTab('cover')} 
+          className={cn("flex-1 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors", activeTab === 'cover' ? "border-primary-600 text-primary-600" : "border-transparent text-slate-500 hover:text-slate-700")}
+        >
+          غلاف
         </button>
       </div>
 
@@ -286,26 +335,54 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
             {activeTab === 'book' && (
               <div className="flex flex-col gap-3 h-full">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  أدخل تفاصيل وعناصر المنهج وسيقوم الذكاء الاصطناعي بتأليف كتاب متكامل يشمل الشرح، الأمثلة، والتمارين مقسمة لصفحات.
+                  أدخل تفاصيل وسيقوم الذكاء الاصطناعي بتأليف كتاب أو قصة متكاملة.
                 </p>
 
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">اسم الكتاب</label>
+                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">نوع العمل</label>
+                  <div className="flex gap-2">
+                    <label className="flex items-center gap-1 text-xs dark:text-slate-300">
+                      <input 
+                        type="radio" 
+                        name="bookType" 
+                        value="كتاب أكاديمي/تعليمي" 
+                        checked={bookType === 'كتاب أكاديمي/تعليمي'}
+                        onChange={(e) => setBookType(e.target.value)}
+                        className="text-primary-600 focus:ring-primary-500"
+                      />
+                      كتاب تعليمي
+                    </label>
+                    <label className="flex items-center gap-1 text-xs dark:text-slate-300">
+                      <input 
+                        type="radio" 
+                        name="bookType" 
+                        value="قصة/رواية" 
+                        checked={bookType === 'قصة/رواية'}
+                        onChange={(e) => setBookType(e.target.value)}
+                        className="text-primary-600 focus:ring-primary-500"
+                      />
+                      قصة/رواية
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">العنوان</label>
                   <input 
                     type="text" 
                     value={bookName} 
                     onChange={(e) => setBookName(e.target.value)}
-                    placeholder="مثال: مبادئ الجغرافيا الحديثة..."
+                    placeholder={bookType === 'قصة/رواية' ? "مثال: رحلة إلى المجهول..." : "مثال: مبادئ الجغرافيا..."}
                     className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none dark:bg-slate-700 dark:text-white" 
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">عناصر ومحتويات الكتاب</label>
+                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">المحتوى / الأفكار</label>
                   <textarea
                     value={bookElements}
                     onChange={(e) => setBookElements(e.target.value)}
-                    placeholder="اكتب العناوين أو عناصر المنهج هنا... (مثال: 1. مقدمة 2. الفصل الأول...)"
+                    placeholder={bookType === 'قصة/رواية' ? "اكتب أفكار القصة، الشخصيات، الحبكة..." : "اكتب العناوين أو عناصر المنهج هنا..."}
                     className="w-full resize-none p-2.5 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none dark:bg-slate-700 dark:text-white"
                     rows={4}
                   />
@@ -313,20 +390,22 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">المرحلة الدراسية</label>
+                    <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">الفئة العمرية/المستوى</label>
                     <input 
                       type="text" 
                       value={bookLevel} 
                       onChange={(e) => setBookLevel(e.target.value)}
+                      placeholder="أطفال، يافعين، جامعي..."
                       className="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded focus:ring-1 focus:ring-primary-500 dark:bg-slate-700 dark:text-white" 
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">المادة/المجال</label>
+                    <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">النوع/المجال</label>
                     <input 
                       type="text" 
                       value={bookSubject} 
                       onChange={(e) => setBookSubject(e.target.value)}
+                      placeholder={bookType === 'قصة/رواية' ? "خيال علمي، مغامرة..." : "علوم، تاريخ..."}
                       className="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded focus:ring-1 focus:ring-primary-500 dark:bg-slate-700 dark:text-white" 
                     />
                   </div>
@@ -334,17 +413,19 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">أسلوب الشرح</label>
+                    <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1">الأسلوب</label>
                     <select 
                       value={bookStyle} 
                       onChange={(e) => setBookStyle(e.target.value)}
                       className="w-full p-2 text-xs border border-slate-300 dark:border-slate-600 rounded focus:ring-1 focus:ring-primary-500 dark:bg-slate-700 dark:text-white bg-transparent"
                     >
-                      <option value="شرح مفصل مع أمثلة">مفصل مع أمثلة</option>
-                      <option value="مختصر ومركز">مختصر ومركز</option>
-                      <option value="أكاديمي ورسمي">أكاديمي ورسمي</option>
-                      <option value="مبسط للأطفال">مبسط للأطفال</option>
-                      <option value="قصصي وتفاعلي">قصصي وتفاعلي</option>
+                      <option value="شرح مفصل مع أمثلة">مفصل</option>
+                      <option value="مختصر ومركز">مختصر</option>
+                      <option value="أكاديمي ورسمي">أكاديمي</option>
+                      <option value="مبسط للأطفال">مبسط (أطفال)</option>
+                      <option value="قصصي وتفاعلي">قصصي</option>
+                      <option value="درامي ومشوق">درامي (قصص)</option>
+                      <option value="كوميدي">كوميدي (قصص)</option>
                     </select>
                   </div>
                   <div>
@@ -372,7 +453,52 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
                 </div>
 
                 <button onClick={handleGenerateBook} className="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
-                  <BookOpenIcon className="w-4 h-4" /> تأليف الكتاب
+                  <BookOpenIcon className="w-4 h-4" /> بدء التأليف
+                </button>
+              </div>
+            )}
+
+            {activeTab === 'cover' && (
+              <div className="flex flex-col gap-3 h-full">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  قم بإنشاء غلاف فني واحترافي لكتابك أو قصتك لإدراجه في المستند.
+                </p>
+
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">وصف الغلاف (الفكرة)</label>
+                  <textarea
+                    value={coverPrompt}
+                    onChange={(e) => setCoverPrompt(e.target.value)}
+                    placeholder="مثال: غلاف لقصة خيال علمي يظهر فيه فتى ينظر إلى كوكب لامع في الفضاء..."
+                    className="w-full resize-none p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none dark:bg-slate-700 dark:text-white"
+                    rows={4}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-600 dark:text-slate-400 block mb-1 font-semibold">النمط الفني</label>
+                  <select 
+                    value={coverStyle} 
+                    onChange={(e) => setCoverStyle(e.target.value)}
+                    className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary-500 focus:outline-none dark:bg-slate-700 dark:text-white bg-transparent"
+                  >
+                    <option value="واقعي ومفصل جدًا 4k">واقعي (Photorealistic)</option>
+                    <option value="رسم رقمي (Digital Art) فني واحترافي">رسم رقمي (Digital Art)</option>
+                    <option value="أنمي (Anime) بألوان زاهية">أنمي (Anime)</option>
+                    <option value="ألوان مائية (Watercolor) هادئة">ألوان مائية (Watercolor)</option>
+                    <option value="تصميم جرافيك مسطح وحديث (Flat Design)">تصميم حديث (Modern/Flat)</option>
+                    <option value="مرسوم باليد وقلم الرصاص">مرسوم باليد (Sketch)</option>
+                    <option value="خيال علمي ومستقبلي (Sci-Fi)">خيال علمي (Sci-Fi)</option>
+                    <option value="أجواء سحرية وفانتازيا">فانتازيا (Fantasy)</option>
+                  </select>
+                </div>
+
+                <button 
+                  onClick={handleGenerateCover} 
+                  disabled={!coverPrompt.trim()}
+                  className="mt-4 w-full bg-pink-600 hover:bg-pink-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <ImageIcon className="w-4 h-4" /> توليد الصورة
                 </button>
               </div>
             )}
