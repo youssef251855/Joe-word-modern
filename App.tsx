@@ -514,8 +514,6 @@ const App: React.FC = () => {
           color: #000000 !important;
         }
         .export-pdf-container, .export-pdf-container * {
-          color: #000000 !important;
-          background-color: transparent !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
           font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif !important;
