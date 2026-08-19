@@ -2,7 +2,7 @@
 import React, { useRef } from 'react';
 import { Button } from './ui/button';
 import { 
-  PlusIcon, FileUpIcon, SearchIcon, ShareIcon, MessageSquareIcon 
+  PlusIcon, FileUpIcon, SearchIcon, ShareIcon, MessageSquareIcon, PrinterIcon 
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -68,8 +68,19 @@ const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 no-print">
         <div className="flex items-center gap-1 sm:gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={onPrint}
+            title="طباعة أو حفظ كـ PDF فوري"
+            className="gap-1.5 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 h-8 rounded-full shadow-xs"
+          >
+            <PrinterIcon className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" />
+            <span className="text-xs font-semibold">طباعة / PDF</span>
+          </Button>
+
           <Button variant="outline" size="sm" className="gap-2 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 px-3 hidden sm:flex h-8 rounded-full">
             <ShareIcon className="w-3.5 h-3.5" />
             <span className="text-xs font-semibold">مشاركة</span>

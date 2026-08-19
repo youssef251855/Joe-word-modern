@@ -99,17 +99,17 @@ const Ribbon: React.FC<RibbonProps> = ({
                   <SaveIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                   <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">حفظ</span>
                 </Button>
-                <Button variant="ghost" onClick={onExportPdf} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                <Button variant="ghost" onClick={onExportPdf} className="flex flex-col h-[70px] w-16 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="تصدير وتحميل ملف PDF">
                   <DownloadIcon className="w-6 h-6 text-rose-500" />
                   <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">تصدير PDF</span>
+                </Button>
+                <Button variant="ghost" onClick={onPrint} className="flex flex-col h-[70px] w-20 p-0 gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 rounded-lg transition-colors" title="طباعة فورية أو حفظ كـ PDF بجودة عالية">
+                  <PrinterIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                  <span className="text-[10px] font-semibold tracking-wide">طباعة / PDF</span>
                 </Button>
                 <Button variant="ghost" onClick={onExportTxt} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
                   <FileTextIcon className="w-6 h-6 text-slate-500" />
                   <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">تصدير TXT</span>
-                </Button>
-                <Button variant="ghost" onClick={onPrint} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
-                  <PrinterIcon className="w-6 h-6 text-slate-600 dark:text-slate-300" />
-                  <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">طباعة</span>
                 </Button>
               </div>
               <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-auto mb-1">الأوامر الأساسية</span>

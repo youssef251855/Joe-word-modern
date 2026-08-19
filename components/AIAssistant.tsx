@@ -31,6 +31,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
   const [bookStyle, setBookStyle] = useState('شرح مفصل مع أمثلة');
   const [bookNotes, setBookNotes] = useState('');
   const [bookPages, setBookPages] = useState('3');
+  const [generateBookCover, setGenerateBookCover] = useState(false);
   
   // Cover Generation state
   const [coverPrompt, setCoverPrompt] = useState('');
@@ -165,8 +166,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
     
     setIsLoading(true);
     let coverHtml = "";
-    try {
-        const bookTitle = bookName || 'بدون عنوان';
+    const bookTitle = bookName || 'بدون عنوان';
+
+    if (generateBookCover) {
+      try {
         const coverPromptText = `تصميم غلاف ${bookType === 'قصة/رواية' ? 'قصة' : 'كتاب'} بعنوان "${bookTitle}". الموضوع: ${bookSubject}. الفئة/المستوى: ${bookLevel}. عناصر أساسية: ${bookElements.substring(0, 100)}. ركز على تصميم غلاف فني واحترافي خالي تماما من أي نص أو كلمات.`;
         
         const response = await fetch('/api/gemini/generate-image', {
@@ -179,11 +182,46 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
         });
 
         const data = await response.json();
-        if (response.ok && !data.error) {
+        if (response.ok && !data.error && data.imageUrl) {
            coverHtml = `<div style="text-align: center;"><img src="${data.imageUrl}" alt="غلاف الكتاب" style="max-width: 100%; max-height: 800px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-bottom: 24px;" /></div><hr class="page-break" contenteditable="false">`;
+        } else {
+           console.warn("Cover image API error, falling back to text cover:", data.error || "Unknown error");
+           coverHtml = `
+             <div class="book-cover-container" style="text-align: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 60px 40px; margin: 40px auto; max-width: 600px; background-color: #fafafa; font-family: 'Cairo', sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); direction: rtl;">
+               <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; margin-bottom: 40px;">${bookType}</div>
+               <h1 style="font-size: 36px; font-weight: 800; color: #1e293b; line-height: 1.3; margin-bottom: 20px; border-bottom: 3px solid #6366f1; padding-bottom: 20px; display: inline-block;">${bookTitle}</h1>
+               <div style="font-size: 18px; color: #475569; margin-bottom: 60px; font-weight: 500;">الموضوع: ${bookSubject} | المستوى: ${bookLevel}</div>
+               <div style="border-top: 1px solid #cbd5e1; width: 100px; margin: 0 auto 30px;"></div>
+               <div style="font-size: 14px; color: #64748b; font-style: italic;">تم التأليف بواسطة المساعد الذكي</div>
+             </div>
+             <hr class="page-break" contenteditable="false">
+           `;
         }
-    } catch (e) {
-        console.warn("Cover generation failed:", e);
+      } catch (e) {
+         console.warn("Cover generation failed, using text cover fallback:", e);
+         coverHtml = `
+           <div class="book-cover-container" style="text-align: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 60px 40px; margin: 40px auto; max-width: 600px; background-color: #fafafa; font-family: 'Cairo', sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); direction: rtl;">
+             <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; margin-bottom: 40px;">${bookType}</div>
+             <h1 style="font-size: 36px; font-weight: 800; color: #1e293b; line-height: 1.3; margin-bottom: 20px; border-bottom: 3px solid #6366f1; padding-bottom: 20px; display: inline-block;">${bookTitle}</h1>
+             <div style="font-size: 18px; color: #475569; margin-bottom: 60px; font-weight: 500;">الموضوع: ${bookSubject} | المستوى: ${bookLevel}</div>
+             <div style="border-top: 1px solid #cbd5e1; width: 100px; margin: 0 auto 30px;"></div>
+             <div style="font-size: 14px; color: #64748b; font-style: italic;">تم التأليف بواسطة المساعد الذكي</div>
+           </div>
+           <hr class="page-break" contenteditable="false">
+         `;
+      }
+    } else {
+      // Direct text cover
+      coverHtml = `
+        <div class="book-cover-container" style="text-align: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 60px 40px; margin: 40px auto; max-width: 600px; background-color: #fafafa; font-family: 'Cairo', sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); direction: rtl;">
+          <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; margin-bottom: 40px;">${bookType}</div>
+          <h1 style="font-size: 36px; font-weight: 800; color: #1e293b; line-height: 1.3; margin-bottom: 20px; border-bottom: 3px solid #6366f1; padding-bottom: 20px; display: inline-block;">${bookTitle}</h1>
+          <div style="font-size: 18px; color: #475569; margin-bottom: 60px; font-weight: 500;">الموضوع: ${bookSubject} | المستوى: ${bookLevel}</div>
+          <div style="border-top: 1px solid #cbd5e1; width: 100px; margin: 0 auto 30px;"></div>
+          <div style="font-size: 14px; color: #64748b; font-style: italic;">تم التأليف بواسطة المساعد الذكي</div>
+        </div>
+        <hr class="page-break" contenteditable="false">
+      `;
     }
     
     if (bookType === 'قصة/رواية') {
@@ -226,6 +264,23 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleGenerateTextCover = () => {
+    const title = documentTitle || "عنوان الكتاب";
+    const desc = coverPrompt.trim() || "تصميم غلاف أنيق وبسيط";
+    const coverHtml = `
+      <div class="book-cover-container" style="text-align: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 60px 40px; margin: 40px auto; max-width: 600px; background-color: #fafafa; font-family: 'Cairo', sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); direction: rtl;">
+        <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: #64748b; margin-bottom: 40px;">تصميم غلاف منسق</div>
+        <h1 style="font-size: 36px; font-weight: 800; color: #1e293b; line-height: 1.3; margin-bottom: 20px; border-bottom: 3px solid #6366f1; padding-bottom: 20px; display: inline-block;">${title}</h1>
+        <div style="font-size: 18px; color: #475569; margin-bottom: 60px; font-weight: 500;">${desc}</div>
+        <div style="border-top: 1px solid #cbd5e1; width: 100px; margin: 0 auto 30px;"></div>
+        <div style="font-size: 14px; color: #64748b; font-style: italic;">تم التصميم بواسطة المساعد الذكي</div>
+      </div>
+      <hr class="page-break" contenteditable="false">
+    `;
+    setPreviewContent(coverHtml);
+    setPreviewAction('insert');
   };
 
   if (!isOpen) return null;
@@ -476,6 +531,19 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
                   />
                 </div>
 
+                <div className="flex items-center gap-2 mt-1 mb-1">
+                  <input
+                    type="checkbox"
+                    id="generateBookCover"
+                    checked={generateBookCover}
+                    onChange={(e) => setGenerateBookCover(e.target.checked)}
+                    className="w-4 h-4 text-indigo-600 border-slate-300 dark:border-slate-600 rounded focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <label htmlFor="generateBookCover" className="text-xs text-slate-700 dark:text-slate-300 font-semibold cursor-pointer select-none">
+                    توليد صورة غلاف باستخدام الذكاء الاصطناعي (اختياري)
+                  </label>
+                </div>
+
                 <button onClick={handleGenerateBook} className="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
                   <BookOpenIcon className="w-4 h-4" /> بدء التأليف
                 </button>
@@ -520,9 +588,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({
                 <button 
                   onClick={handleGenerateCover} 
                   disabled={!coverPrompt.trim()}
-                  className="mt-4 w-full bg-pink-600 hover:bg-pink-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <ImageIcon className="w-4 h-4" /> توليد الصورة
+                  <ImageIcon className="w-4 h-4" /> توليد صورة بالذكاء الاصطناعي
+                </button>
+
+                <button 
+                  onClick={handleGenerateTextCover}
+                  className="mt-2 w-full border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 font-medium py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <BookOpenIcon className="w-4 h-4" /> إنشاء غلاف نصي منسق (فوري وبدون حصة)
                 </button>
               </div>
             )}

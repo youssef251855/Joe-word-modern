@@ -90,8 +90,10 @@ async function startServer() {
         res.status(500).json({ error: "لم يتم إنشاء أي صورة." });
       }
     } catch (error: any) {
-      console.error("Gemini API Error (Image):", error);
-      res.status(500).json({ error: error.message });
+      console.warn("Gemini API Error (Image):", error.message);
+      res.status(429).json({ 
+        error: "حصة إنشاء الصور المجانية انتهت أو غير مفعلة لهذا الحساب. تم إدراج غلاف نصي منسق ورائع بدلاً من الصورة تلقائياً." 
+      });
     }
   });
 

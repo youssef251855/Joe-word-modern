@@ -343,19 +343,19 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
           .page-break { margin: 2rem -2rem; }
         }
         @media print {
-          header, footer, nav, aside, button, .fixed, .absolute, .shrink-0,
+          .no-print, header, nav, aside, button:not(.print-allow), 
           .ql-toolbar, .image-sidebar, .navigation-pane, .ai-assistant-container,
           .ribbon-container, .top-bar, [class*="Header"], [class*="Ribbon"], 
           [class*="AIAssistant"], [class*="StatusBar"] {
             display: none !important;
           }
           
-          body, html {
+          body, html, #root {
             background-color: #ffffff !important;
-            color: #000000 !important;
             margin: 0 !important;
             padding: 0 !important;
             height: auto !important;
+            min-height: auto !important;
             overflow: visible !important;
           }
 
@@ -367,6 +367,8 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
             max-width: 100% !important;
             box-shadow: none !important;
             background: transparent !important;
+            overflow: visible !important;
+            height: auto !important;
           }
 
           .ql-container.ql-snow {
@@ -381,7 +383,6 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
             overflow: visible !important;
             height: auto !important;
             background-color: transparent !important;
-            color: #000000 !important;
           }
 
           .page-break, hr {

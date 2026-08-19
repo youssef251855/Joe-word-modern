@@ -15,6 +15,7 @@ import { db } from './firebase';
 import { supabase } from './supabase';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { printDocument } from './lib/printUtils';
 
 interface Heading {
   text: string;
@@ -511,7 +512,7 @@ const App: React.FC = () => {
       styleTag.innerHTML = `
         .export-pdf-container {
           background-color: #ffffff !important;
-          color: #000000 !important;
+          /* color removed to keep inline colors */
         }
         .export-pdf-container, .export-pdf-container * {
           -webkit-print-color-adjust: exact !important;
@@ -665,74 +666,57 @@ const App: React.FC = () => {
     const element = document.querySelector('.ql-editor') as HTMLElement;
     if (!element) return;
 
-    // Heuristic page estimator to split extremely long text without manual page breaks
-    const getEstimatedHeight = (node: Node): number => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent?.trim() || '';
-        if (!text) return 0;
-        return Math.max(20, Math.ceil(text.length / 80) * 24);
-      }
-      if (node instanceof HTMLElement) {
-        if (node.classList.contains('page-break') || node.tagName === 'HR') {
-          return -1; // Manual page break
-        }
-        const tagName = node.tagName.toLowerCase();
-        let height = 0;
-        if (tagName.startsWith('h')) {
-          height += 40;
-        } else if (tagName === 'img') {
-          height += 300;
-        } else if (tagName === 'table') {
-          height += 200;
-        } else {
-          const textLen = node.textContent?.trim().length || 0;
-          if (textLen === 0) {
-            const images = node.querySelectorAll('img');
-            if (images.length > 0) {
-              height += images.length * 300;
-            } else {
-              height += 24;
-            }
-          } else {
-            height += Math.max(24, Math.ceil(textLen / 70) * 24);
-            const images = node.querySelectorAll('img');
-            if (images.length > 0) {
-              height += images.length * 300;
-            }
-          }
-        }
-        height += 16;
-        return height;
-      }
-      return 0;
-    };
-
     const isPortrait = pageLayout.orientation === 'portrait';
+    const widthPx = isPortrait ? 794 : 1123;
+    const padding = pageLayout.margins === 'normal' ? 160 : pageLayout.margins === 'narrow' ? 64 : 240;
+    const maxPageHeight = (isPortrait ? 1123 : 794) - padding;
+
+    // Create a temporary container to accurately measure node heights
+    const measureContainer = document.createElement('div');
+    measureContainer.className = 'ql-editor printable-area export-pdf-container';
+    measureContainer.style.position = 'fixed';
+    measureContainer.style.left = '-9999px';
+    measureContainer.style.top = '0px';
+    measureContainer.style.width = `${widthPx}px`;
+    measureContainer.style.padding = `${padding / 2}px`;
+    measureContainer.style.fontFamily = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
+    measureContainer.style.direction = 'rtl';
+    measureContainer.style.textAlign = 'right';
+    measureContainer.style.boxSizing = 'border-box';
+    document.body.appendChild(measureContainer);
+
     const childNodes = Array.from(element.childNodes);
     const pages: Node[][] = [];
     let currentPage: Node[] = [];
     let currentHeightSum = 0;
-    const maxPageHeight = isPortrait ? 900 : 600;
 
     for (const node of childNodes) {
-      const estHeight = getEstimatedHeight(node);
-      if (estHeight === -1) {
+      if (node instanceof HTMLElement && (node.classList.contains('page-break') || node.tagName === 'HR')) {
         if (currentPage.length > 0) {
           pages.push(currentPage);
         }
         currentPage = [];
         currentHeightSum = 0;
+        continue;
+      }
+      
+      const clonedNode = node.cloneNode(true) as HTMLElement;
+      measureContainer.appendChild(clonedNode);
+      const nodeHeight = clonedNode.getBoundingClientRect ? clonedNode.getBoundingClientRect().height : 24;
+      measureContainer.removeChild(clonedNode);
+
+      if (currentPage.length > 0 && currentHeightSum + nodeHeight > maxPageHeight) {
+        pages.push(currentPage);
+        currentPage = [node];
+        currentHeightSum = nodeHeight;
       } else {
-        if (currentPage.length > 0 && currentHeightSum + estHeight > maxPageHeight) {
-          pages.push(currentPage);
-          currentPage = [node];
-          currentHeightSum = estHeight;
-        } else {
-          currentPage.push(node);
-          currentHeightSum += estHeight;
-        }
+        currentPage.push(node);
+        currentHeightSum += nodeHeight;
       }
     }
+    
+    document.body.removeChild(measureContainer);
+
     if (currentPage.length > 0) {
       pages.push(currentPage);
     }
@@ -761,7 +745,11 @@ const App: React.FC = () => {
   };
 
   const handlePrint = () => {
-    window.print();
+    printDocument(content, {
+      title: title || 'مستند بدون عنوان',
+      orientation: pageLayout.orientation,
+      margins: pageLayout.margins
+    });
   };
 
   if (!user) return <Auth />;
@@ -835,7 +823,7 @@ const App: React.FC = () => {
         ) : (
           <div className="flex flex-col flex-1 overflow-hidden relative">
             {!isReadingMode && (
-              <div className="shrink-0 z-10 w-full bg-white overflow-hidden shadow-sm">
+              <div className="shrink-0 z-10 w-full bg-white overflow-hidden shadow-sm no-print">
                 {/* Top Bar */}
                 <Header 
                   title={title} 
@@ -893,7 +881,7 @@ const App: React.FC = () => {
             )}
 
             {isReadingMode && (
-              <div className="absolute top-4 left-4 z-50">
+              <div className="absolute top-4 left-4 z-50 no-print">
                 <button 
                   onClick={() => setIsReadingMode(false)}
                   className="bg-slate-800/80 hover:bg-slate-900 text-white rounded-full px-4 py-2 shadow-lg backdrop-blur-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 flex flex-row items-center gap-2"
@@ -907,14 +895,14 @@ const App: React.FC = () => {
             <div className="flex flex-1 overflow-hidden bg-[#f3f2f1] relative">
               {/* Navigation Pane (Optional) */}
               {showNavigation && !isReadingMode && (
-                <div className="hidden md:block">
+                <div className="hidden md:block no-print">
                   <NavigationPane headings={headings} />
                 </div>
               )}
 
               {/* AI Assistant */}
               {isAIAssistantOpen && (
-                <div className="absolute inset-y-0 right-0 h-full z-30 md:relative md:z-20 shrink-0">
+                <div className="absolute inset-y-0 right-0 h-full z-30 md:relative md:z-20 shrink-0 no-print">
                   <AIAssistant 
                     editorRef={editorRef} 
                     isOpen={isAIAssistantOpen} 
@@ -951,19 +939,21 @@ const App: React.FC = () => {
                 </div>
               </main>
               {selectedImage && (
-                <div className="w-64 bg-white border-l border-slate-200 p-4 h-full">
+                <div className="w-64 bg-white border-l border-slate-200 p-4 h-full no-print">
                   <ImagePropertiesPanel image={selectedImage} onClose={() => setSelectedImage(null)} />
                 </div>
               )}
             </div>
-            <StatusBar wordCount={wordCount} activePage={activePage} totalPages={totalPages} />
+            <div className="no-print">
+              <StatusBar wordCount={wordCount} activePage={activePage} totalPages={totalPages} />
+            </div>
           </div>
         )}
       </div>
 
       {/* Template Selection Modal */}
       {showTemplateModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 max-w-2xl w-full" dir="rtl">
             <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-6">اختيار قالب المستند</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -992,7 +982,7 @@ const App: React.FC = () => {
 
       {/* Stats Modal */}
       {showStatsModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 max-w-sm w-full" dir="rtl">
             <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">إحصائيات متقدمة</h2>
             <div className="space-y-4">
@@ -1027,7 +1017,7 @@ const App: React.FC = () => {
 
       {/* Long Document Export Modal */}
       {showLongDocModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 max-w-lg w-full" dir="rtl">
             <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
               ⚠️ تنبيه: مستند طويل جداً ({pendingPageCount} صفحة)
