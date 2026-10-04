@@ -1,12 +1,13 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { 
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from './ui/dropdown-menu';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from './ui/tabs';
-import { Button, buttonVariants } from './ui/button';
+import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
 import { 
   ClipboardIcon, ScissorsIcon, CopyIcon, BoldIcon, ItalicIcon, 
@@ -26,7 +27,8 @@ import {
   FileSignatureIcon, QuoteIcon, FootprintsIcon,
   HistoryIcon, EyeIcon, LayoutTemplateIcon,
   RulerIcon, Grid3X3Icon, PanelLeftIcon,
-  MicIcon, MicOffIcon, SparklesIcon
+  MicIcon, MicOffIcon, SparklesIcon,
+  FolderOpenIcon, Share2Icon, CodeIcon, FileCodeIcon
 } from 'lucide-react';
 import { 
   Select, 
@@ -36,12 +38,21 @@ import {
   SelectValue 
 } from './ui/select';
 import { PageBreakIcon } from './icons';
+import { ShapeType } from '../types/shapes';
+import ShapesInsertMenu from './ShapesInsertMenu';
 
 interface RibbonProps {
   onSave?: () => void;
+  onSaveJoed?: () => void;
+  onOpenDocx?: () => void;
+  onOpenJoed?: () => void;
   onPrint?: () => void;
+  onExportWord?: () => void;
   onExportPdf?: () => void;
   onExportTxt?: () => void;
+  onExportHtml?: () => void;
+  onExportMarkdown?: () => void;
+  onInsertShape?: (type: ShapeType) => void;
   onDictate?: () => void;
   isDictating?: boolean;
   onNewDocument?: () => void;
@@ -54,7 +65,26 @@ interface RibbonProps {
 }
 
 const Ribbon: React.FC<RibbonProps> = ({ 
-  onSave, onPrint, onExportPdf, onExportTxt, onDictate, isDictating = false, onNewDocument, onFormat, onUndo, onRedo, wordCount = 0, onShowStats, onToggleAIAssistant
+  onSave, 
+  onSaveJoed,
+  onOpenDocx,
+  onOpenJoed,
+  onPrint, 
+  onExportWord, 
+  onExportPdf, 
+  onExportTxt, 
+  onExportHtml,
+  onExportMarkdown,
+  onInsertShape,
+  onDictate, 
+  isDictating = false, 
+  onNewDocument, 
+  onFormat, 
+  onUndo, 
+  onRedo, 
+  wordCount = 0, 
+  onShowStats, 
+  onToggleAIAssistant
 }) => {
   return (
     <div className="bg-slate-50/80 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 select-none backdrop-blur-sm transition-colors duration-200">
@@ -64,7 +94,7 @@ const Ribbon: React.FC<RibbonProps> = ({
             <TabsList className="bg-transparent h-9 p-0 gap-2 flex min-w-max">
               <TabsTrigger value="file" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">ملف</TabsTrigger>
               <TabsTrigger value="home" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">الصفحة الرئيسية</TabsTrigger>
-              <TabsTrigger value="insert" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">إدراج</TabsTrigger>
+              <TabsTrigger value="insert" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">إدراج (Shapes & Objects)</TabsTrigger>
               <TabsTrigger value="layout" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">تخطيط</TabsTrigger>
               <TabsTrigger value="view" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">عرض</TabsTrigger>
               <TabsTrigger value="references" className="px-4 h-9 rounded-t-md border-b-2 border-transparent data-[state=active]:border-primary-500 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-800 data-[state=active]:shadow-none text-xs font-semibold text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md dark:hover:bg-slate-800/50">مراجع</TabsTrigger>
@@ -84,35 +114,117 @@ const Ribbon: React.FC<RibbonProps> = ({
         <div className="bg-white dark:bg-slate-800 h-28 flex items-center px-2 overflow-x-auto scrollbar-none transition-colors duration-200">
           {/* FILE TAB */}
           <TabsContent value="file" className="m-0 h-full flex items-center gap-0 min-w-max">
+            {/* Core Management */}
             <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-3 py-1 shrink-0">
               <div className="flex-1 flex items-center gap-1.5">
                 <Button variant="ghost" onClick={() => onFormat?.('dashboard', true)} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
                   <LayoutIcon className="w-6 h-6 text-slate-600 dark:text-slate-300" />
                   <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">لوحة التحكم</span>
                 </Button>
-                <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                <div className="w-[1px] h-10 bg-slate-200 dark:bg-slate-700 mx-0.5"></div>
                 <Button variant="ghost" onClick={onNewDocument} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
                   <FileTextIcon className="w-6 h-6 text-primary-500" />
                   <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">جديد</span>
                 </Button>
-                <Button variant="ghost" onClick={onSave} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                <Button variant="ghost" onClick={onSave} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="حفظ المستند الحالي بصيغة JOED">
                   <SaveIcon className="w-6 h-6 text-primary-600 dark:text-primary-400" />
                   <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">حفظ</span>
                 </Button>
-                <Button variant="ghost" onClick={onExportPdf} className="flex flex-col h-[70px] w-16 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="تصدير وتحميل ملف PDF">
-                  <DownloadIcon className="w-6 h-6 text-rose-500" />
-                  <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">تصدير PDF</span>
+                <Button variant="ghost" onClick={onSaveJoed} className="flex flex-col h-[70px] w-20 p-0 gap-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-lg transition-colors" title="حفظ وتنزيل المستند بالصيغة الأصلية (.joed)">
+                  <div className="w-6 h-6 rounded bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black">
+                    JD
+                  </div>
+                  <span className="text-[10px] font-bold tracking-wide">حفظ كـ JOED</span>
                 </Button>
-                <Button variant="ghost" onClick={onPrint} className="flex flex-col h-[70px] w-20 p-0 gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 rounded-lg transition-colors" title="طباعة فورية أو حفظ كـ PDF بجودة عالية">
+              </div>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-auto mb-1">المستند و JOED</span>
+            </div>
+
+            {/* Open Formats Group */}
+            <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-3 py-1 shrink-0">
+              <div className="flex-1 flex items-center gap-1.5">
+                <Button variant="ghost" onClick={onOpenDocx} className="flex flex-col h-[70px] w-20 p-0 gap-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-lg transition-colors" title="فتح وقراءة ملف Microsoft Word (.docx)">
+                  <FolderOpenIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  <span className="text-[10px] font-bold tracking-wide">Open DOCX</span>
+                </Button>
+                <Button variant="ghost" onClick={onOpenJoed} className="flex flex-col h-[70px] w-20 p-0 gap-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 rounded-lg transition-colors" title="فتح واستعادة مستند JOED أصلي (.joed)">
+                  <FolderOpenIcon className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-[10px] font-bold tracking-wide">Open JOED</span>
+                </Button>
+              </div>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-auto mb-1">فتح الملفات</span>
+            </div>
+
+            {/* Export Menu Group */}
+            <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-3 py-1 shrink-0">
+              <div className="flex-1 flex items-center gap-1.5">
+                {/* File -> Export Menu Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="flex flex-col h-[70px] w-20 p-0 items-center justify-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 rounded-lg transition-colors cursor-pointer border-0 bg-transparent">
+                    <DownloadIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+                    <div className="flex items-center gap-0.5">
+                      <span className="text-[10px] font-bold tracking-wide">File → Export</span>
+                      <ChevronDownIcon className="w-3 h-3" />
+                    </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56 p-1.5 bg-white dark:bg-slate-800 shadow-2xl border border-slate-200 dark:border-slate-700 text-right" dir="rtl">
+                    <DropdownMenuItem onClick={onSaveJoed} className="cursor-pointer gap-2 py-2">
+                      <div className="w-5 h-5 rounded bg-emerald-600 text-white flex items-center justify-center text-[9px] font-black">JD</div>
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">JOED (.joed)</div>
+                        <div className="text-[10px] text-slate-500">صيغة Joe Word الأصلية الكاملة مع الأشكال</div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={onExportWord} className="cursor-pointer gap-2 py-2">
+                      <FileTextIcon className="w-5 h-5 text-blue-600" />
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">Word DOCX (.docx)</div>
+                        <div className="text-[10px] text-slate-500">مستند Microsoft Word متوافق</div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onExportPdf} className="cursor-pointer gap-2 py-2">
+                      <DownloadIcon className="w-5 h-5 text-rose-500" />
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">PDF (.pdf)</div>
+                        <div className="text-[10px] text-slate-500">مستند PDF قابل للطباعة والمشاركة</div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onExportHtml} className="cursor-pointer gap-2 py-2">
+                      <CodeIcon className="w-5 h-5 text-amber-500" />
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">HTML (.html)</div>
+                        <div className="text-[10px] text-slate-500">صفحة ويب مستقلة مدمجة الأشكال</div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onExportTxt} className="cursor-pointer gap-2 py-2">
+                      <FileTextIcon className="w-5 h-5 text-slate-500" />
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">Plain TXT (.txt)</div>
+                        <div className="text-[10px] text-slate-500">نص خام مجرد بدون تنسيق</div>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={onExportMarkdown} className="cursor-pointer gap-2 py-2">
+                      <FileCodeIcon className="w-5 h-5 text-purple-600" />
+                      <div>
+                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100">Markdown (.md)</div>
+                        <div className="text-[10px] text-slate-500">تنسيق ماركداون مع بيانات الأشكال</div>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button variant="ghost" onClick={onExportWord} className="flex flex-col h-[70px] w-18 p-0 gap-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/40 text-blue-700 dark:text-blue-300 rounded-lg transition-colors" title="تصدير سريع لـ Word">
+                  <FileTextIcon className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                  <span className="text-[10px] font-bold tracking-wide">DOCX</span>
+                </Button>
+
+                <Button variant="ghost" onClick={onPrint} className="flex flex-col h-[70px] w-18 p-0 gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 rounded-lg transition-colors" title="طباعة أو تصدير PDF بجودة عالية">
                   <PrinterIcon className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
                   <span className="text-[10px] font-semibold tracking-wide">طباعة / PDF</span>
                 </Button>
-                <Button variant="ghost" onClick={onExportTxt} className="flex flex-col h-[70px] w-14 p-0 gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
-                  <FileTextIcon className="w-6 h-6 text-slate-500" />
-                  <span className="text-[10px] dark:text-slate-300 font-medium tracking-wide">تصدير TXT</span>
-                </Button>
               </div>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-auto mb-1">الأوامر الأساسية</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider mt-auto mb-1">التصدير والطباعة</span>
             </div>
           </TabsContent>
 
@@ -159,7 +271,7 @@ const Ribbon: React.FC<RibbonProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="small">صغير</SelectItem>
-                      <SelectItem value="false">عادي</SelectItem>
+                      <SelectItem value="normal">عادي</SelectItem>
                       <SelectItem value="large">كبير</SelectItem>
                       <SelectItem value="huge">ضخم</SelectItem>
                     </SelectContent>
@@ -173,17 +285,9 @@ const Ribbon: React.FC<RibbonProps> = ({
                   <div className="w-px h-5 bg-slate-200 mx-1" />
                   <Button variant="ghost" size="icon" onClick={() => onFormat?.('script', 'sub')} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md"><Subscript className="w-4 h-4" /></Button>
                   <Button variant="ghost" size="icon" onClick={() => onFormat?.('script', 'super')} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md"><Superscript className="w-4 h-4" /></Button>
-                  <div className="w-px h-5 bg-slate-200 mx-1" />
-                  <Button variant="ghost" size="icon" onClick={() => onFormat?.('color', 'red')} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md flex flex-col gap-0">
-                    <span className="text-xs font-bold text-red-600">A</span>
-                    <div className="w-3 h-0.5 bg-red-600" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => onFormat?.('background', 'yellow')} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                    <HighlighterIcon className="w-4 h-4 text-yellow-500" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => onFormat?.('clean', true)} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                    <EraserIcon className="w-4 h-4 text-slate-500 dark:text-slate-400 dark:text-slate-500" />
-                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => onFormat?.('color', '#ef4444')} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md"><TypeIcon className="w-4 h-4 text-red-500" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => onFormat?.('background', '#fef08a')} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md"><HighlighterIcon className="w-4 h-4 text-yellow-500" /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => onFormat?.('clean', true)} className="h-7 w-7 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md"><EraserIcon className="w-4 h-4 text-slate-500" /></Button>
                 </div>
               </div>
               <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">خط</span>
@@ -214,13 +318,13 @@ const Ribbon: React.FC<RibbonProps> = ({
             <div className="flex flex-col items-center h-full px-2 py-1 shrink-0">
               <div className="flex-1 flex flex-col gap-0 justify-center">
                 <Button variant="ghost" size="sm" className="h-6 px-2 justify-start gap-2 text-[10px] dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                  <SearchIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 dark:text-slate-500" /> بحث
+                  <SearchIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> بحث
                 </Button>
                 <Button variant="ghost" size="sm" className="h-6 px-2 justify-start gap-2 text-[10px] dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                  <ReplaceIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400 dark:text-slate-500" /> استبدال
+                  <ReplaceIcon className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" /> استبدال
                 </Button>
               </div>
-              <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">تحرير</span>
+              <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">تحرير</span>
             </div>
 
             {/* Voice Group */}
@@ -238,6 +342,17 @@ const Ribbon: React.FC<RibbonProps> = ({
 
           {/* INSERT TAB */}
           <TabsContent value="insert" className="m-0 h-full flex items-center gap-0 min-w-max">
+             {/* Shapes Section (NEW & ADVANCED) */}
+             <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-3 py-1 shrink-0 bg-indigo-50/30 dark:bg-indigo-950/20 rounded-lg">
+                <div className="flex-1 flex items-center gap-2">
+                  {onInsertShape && (
+                    <ShapesInsertMenu onInsertShape={onInsertShape} />
+                  )}
+                </div>
+                <span className="text-[9px] text-indigo-600 dark:text-indigo-400 font-bold mb-1 mt-auto uppercase tracking-wider">الأشكال والمخططات</span>
+             </div>
+
+             {/* Standard Inserts */}
              <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-2 py-1 shrink-0">
                 <div className="flex-1 flex items-center gap-2">
                   <Button variant="ghost" onClick={() => onFormat?.('pageBreak', true)} className="flex flex-col h-[70px] w-[60px] p-0 gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
@@ -257,7 +372,7 @@ const Ribbon: React.FC<RibbonProps> = ({
                     <span className="text-[10px] dark:text-slate-300">ارتباط</span>
                   </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">إدراج</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">وسائط وعناصر</span>
              </div>
           </TabsContent>
 
@@ -274,7 +389,7 @@ const Ribbon: React.FC<RibbonProps> = ({
                     <span className="text-[10px] dark:text-slate-300">عرض القراءة</span>
                   </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">طرق العرض</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">طرق العرض</span>
              </div>
              <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-2 py-1 shrink-0">
                 <div className="flex-1 flex items-center gap-2">
@@ -287,7 +402,7 @@ const Ribbon: React.FC<RibbonProps> = ({
                     <span className="text-[10px] dark:text-slate-300">خطوط الشبكة</span>
                   </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">إظهار</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">إظهار</span>
              </div>
           </TabsContent>
 
@@ -321,7 +436,7 @@ const Ribbon: React.FC<RibbonProps> = ({
                     <span className="text-[10px] dark:text-slate-300">الأعمدة</span>
                   </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">إعداد الصفحة</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">إعداد الصفحة</span>
              </div>
           </TabsContent>
 
@@ -338,7 +453,7 @@ const Ribbon: React.FC<RibbonProps> = ({
                     <span className="text-[10px] dark:text-slate-300">إدراج حاشية</span>
                   </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">جدول المحتويات</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">جدول المحتويات</span>
              </div>
           </TabsContent>
 
@@ -354,40 +469,21 @@ const Ribbon: React.FC<RibbonProps> = ({
                     <LanguagesIcon className="w-8 h-8 text-blue-600" />
                     <span className="text-[10px] dark:text-slate-300">ترجمة</span>
                   </Button>
-                  <Button variant="ghost" onClick={onShowStats} className="flex flex-col h-[70px] w-[60px] p-0 gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                    <div className="w-8 h-8 flex items-center justify-center bg-blue-50 rounded text-blue-600 font-bold text-lg">
-                      {wordCount}
-                    </div>
-                    <span className="text-[10px] dark:text-slate-300">عدد الكلمات</span>
-                  </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">تدقيق</span>
-             </div>
-             <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-2 py-1 shrink-0">
-                <div className="flex-1 flex items-center gap-2">
-                  <Button variant="ghost" className="flex flex-col h-[70px] w-[60px] p-0 gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                    <MessageSquareIcon className="w-8 h-8 text-primary-600" />
-                    <span className="text-[10px] dark:text-slate-300">تعليق جديد</span>
-                  </Button>
-                </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">تعليقات</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">تدقيق</span>
              </div>
           </TabsContent>
 
           {/* HELP TAB */}
           <TabsContent value="help" className="m-0 h-full flex items-center gap-0 min-w-max">
-             <div className="flex flex-col items-center h-full border-l border-slate-200 dark:border-slate-700 px-2 py-1 shrink-0">
+             <div className="flex flex-col items-center h-full px-2 py-1 shrink-0">
                 <div className="flex-1 flex items-center gap-2">
                   <Button variant="ghost" className="flex flex-col h-[70px] w-[60px] p-0 gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                    <HelpCircleIcon className="w-8 h-8 text-slate-600 dark:text-slate-300" />
+                    <HelpCircleIcon className="w-8 h-8 text-purple-600" />
                     <span className="text-[10px] dark:text-slate-300">تعليمات</span>
                   </Button>
-                  <Button variant="ghost" className="flex flex-col h-[70px] w-[60px] p-0 gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors rounded-md">
-                    <GlobeIcon className="w-8 h-8 text-slate-600 dark:text-slate-300" />
-                    <span className="text-[10px] dark:text-slate-300">ملاحظات</span>
-                  </Button>
                 </div>
-                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 dark:text-slate-500 mt-auto uppercase tracking-wider">مساعدة</span>
+                <span className="text-[9px] text-slate-400 dark:text-slate-500 mb-1 mt-auto uppercase tracking-wider">مساعدة</span>
              </div>
           </TabsContent>
         </div>

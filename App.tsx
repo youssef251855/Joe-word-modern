@@ -16,6 +16,20 @@ import { supabase } from './supabase';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { printDocument } from './lib/printUtils';
+import { exportToWord } from './lib/wordExportUtils';
+import { exportDocumentToPdf } from './lib/pdfExportUtils';
+import { ShapeItem, ShapeType } from './types/shapes';
+import ShapesLayer from './components/ShapesLayer';
+import ShapesToolbar from './components/ShapesToolbar';
+import { 
+  createJoedDocument, 
+  serializeJoed, 
+  parseJoed, 
+  downloadJoedFile, 
+  exportToStandaloneHtml, 
+  convertToMarkdown 
+} from './lib/joedFormat';
+import { importDocxFile } from './lib/docxImporter';
 
 interface Heading {
   text: string;
@@ -35,7 +49,7 @@ const App: React.FC = () => {
           (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
         })
         .catch(error => {
-          console.warn('Failed to load PDF worker as Blob, falling back to direct URL (might cause CORS issues)', error);
+          console.warn('Failed to load PDF worker as Blob, falling back to direct URL', error);
           (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
         });
     }
@@ -65,6 +79,13 @@ const App: React.FC = () => {
   const [activePage, setActivePage] = useState<number>(1);
   const recognitionRef = useRef<any>(null);
   const [selectedImage, setSelectedImage] = useState<HTMLImageElement | null>(null);
+  
+  // Shapes State
+  const [shapes, setShapes] = useState<ShapeItem[]>([]);
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  const [shapesHistory, setShapesHistory] = useState<ShapeItem[][]>([]);
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+
   const [pageLayout, setPageLayout] = useState<{
     margins: 'normal' | 'narrow' | 'wide';
     orientation: 'portrait' | 'landscape';
@@ -73,6 +94,7 @@ const App: React.FC = () => {
     orientation: 'portrait'
   });
   const editorRef = useRef<EditorHandle>(null);
+  const hiddenFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -189,6 +211,103 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Shapes Undo/Redo & State updates
+  const handleUpdateShapes = (newShapes: ShapeItem[], recordHistory: boolean = true) => {
+    if (recordHistory) {
+      setShapesHistory(prev => {
+        const sliced = prev.slice(0, historyIndex + 1);
+        return [...sliced, shapes];
+      });
+      setHistoryIndex(prev => prev + 1);
+    }
+    setShapes(newShapes);
+  };
+
+  const handleShapesUndo = () => {
+    if (historyIndex >= 0) {
+      const prevShapes = shapesHistory[historyIndex];
+      setHistoryIndex(prev => prev - 1);
+      setShapes(prevShapes);
+    }
+  };
+
+  const handleInsertShape = (type: ShapeType) => {
+    const newShape: ShapeItem = {
+      id: 'shape-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      type,
+      x: 140 + (shapes.length % 5) * 25,
+      y: 120 + (shapes.length % 5) * 25,
+      width: type === 'circle' || type === 'star' ? 140 : type === 'line' ? 220 : 180,
+      height: type === 'line' ? 4 : type === 'circle' || type === 'star' ? 140 : 120,
+      rotation: 0,
+      fill: type === 'line' ? 'transparent' : '#3b82f6',
+      stroke: type === 'line' ? '#2563eb' : '#1d4ed8',
+      strokeWidth: type === 'line' ? 3 : 2,
+      strokeStyle: 'solid',
+      opacity: 1,
+      zIndex: (shapes.length > 0 ? Math.max(...shapes.map(s => s.zIndex || 1)) + 1 : 1),
+      text: '',
+      textStyle: {
+        fontSize: 14,
+        fontFamily: 'Cairo',
+        color: '#ffffff',
+        bold: true,
+        italic: false,
+        underline: false,
+        align: 'center'
+      }
+    };
+
+    handleUpdateShapes([...shapes, newShape]);
+    setSelectedShapeIds([newShape.id]);
+  };
+
+  const handleDeleteSelectedShapes = () => {
+    if (selectedShapeIds.length === 0) return;
+    const remaining = shapes.filter(s => !selectedShapeIds.includes(s.id));
+    handleUpdateShapes(remaining);
+    setSelectedShapeIds([]);
+  };
+
+  const handleDuplicateSelectedShapes = () => {
+    if (selectedShapeIds.length === 0) return;
+    const selected = shapes.filter(s => selectedShapeIds.includes(s.id));
+    const duplicates: ShapeItem[] = selected.map(s => ({
+      ...s,
+      id: 'shape-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+      x: s.x + 25,
+      y: s.y + 25,
+      zIndex: (Math.max(...shapes.map(item => item.zIndex || 1), 1)) + 1
+    }));
+
+    handleUpdateShapes([...shapes, ...duplicates]);
+    setSelectedShapeIds(duplicates.map(d => d.id));
+  };
+
+  const handleGroupSelectedShapes = () => {
+    if (selectedShapeIds.length < 2) return;
+    const newGroupId = 'group-' + Date.now();
+    const updated = shapes.map(s => {
+      if (selectedShapeIds.includes(s.id)) {
+        return { ...s, groupId: newGroupId };
+      }
+      return s;
+    });
+    handleUpdateShapes(updated);
+  };
+
+  const handleUngroupSelectedShapes = () => {
+    if (selectedShapeIds.length === 0) return;
+    const updated = shapes.map(s => {
+      if (selectedShapeIds.includes(s.id)) {
+        const { groupId, ...rest } = s;
+        return rest as ShapeItem;
+      }
+      return s;
+    });
+    handleUpdateShapes(updated);
+  };
+
   const handleSelectDocument = async (id: string) => {
     try {
       const docRef = doc(db, 'documents', id);
@@ -197,6 +316,8 @@ const App: React.FC = () => {
         const data = docSnap.data();
         setContent(data.content || '');
         setTitle(data.title || 'مستند بدون عنوان');
+        setShapes(data.shapes || []);
+        if (data.pageLayout) setPageLayout(data.pageLayout);
         setCurrentDocId(id);
         setView('editor');
       }
@@ -209,11 +330,12 @@ const App: React.FC = () => {
     if (typeof templateContent === 'string') {
       setContent(templateContent);
       setTitle('مستند جديد');
+      setShapes([]);
+      setSelectedShapeIds([]);
       setCurrentDocId(null);
       setView('editor');
       setShowTemplateModal(false);
       
-      // Delay to ensure Editor is mounted before setting content
       setTimeout(() => {
         editorRef.current?.setHtml(templateContent);
       }, 100);
@@ -225,6 +347,8 @@ const App: React.FC = () => {
   const handleCreateBlankDocument = () => {
     setContent('');
     setTitle('مستند بدون عنوان');
+    setShapes([]);
+    setSelectedShapeIds([]);
     setCurrentDocId(null);
     setView('editor');
     setShowTemplateModal(false);
@@ -239,156 +363,220 @@ const App: React.FC = () => {
   ];
 
   const handleSaveToFirestore = async () => {
-    if (!user) return;
+    if (!user) {
+      // Save local JOED download if not authenticated
+      handleSaveJoed();
+      return;
+    }
     try {
+      const currentHtml = editorRef.current?.getHtml() || content;
       if (currentDocId) {
         const docRef = doc(db, 'documents', currentDocId);
         await setDoc(docRef, {
           title,
-          content,
+          content: currentHtml,
+          shapes,
+          pageLayout,
           updatedAt: serverTimestamp(),
           userId: user.uid
         }, { merge: true });
       } else {
         const docRef = await addDoc(collection(db, 'documents'), {
           title,
-          content,
+          content: currentHtml,
+          shapes,
+          pageLayout,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           userId: user.uid
         });
         setCurrentDocId(docRef.id);
       }
-      alert('تم الحفظ بنجاح');
+      alert('تم حفظ المستند بنجاح! 💾');
     } catch (error) {
-      console.error('Error saving to Firestore:', error);
-      alert('حدث خطأ أثناء الحفظ');
+      console.error('Error saving document to firestore:', error);
+      alert('فشل حفظ المستند في السحابة.');
     }
   };
 
+  // JOED Native Format Save
+  const handleSaveJoed = async () => {
+    const currentHtml = editorRef.current?.getHtml() || content;
+    const joedDoc = await createJoedDocument({
+      title: title || 'مستند Joe Word',
+      content: currentHtml,
+      shapes,
+      pageLayout,
+      language: 'ar',
+      direction: 'rtl'
+    });
+    const fileName = `${title || 'مستند-جو-وورد'}.joed`;
+    downloadJoedFile(joedDoc, fileName);
+  };
+
+  // Open Document (JOED, DOCX, PDF, HTML, TXT, MD)
   const handleOpenDocument = async (file: File) => {
-    console.log('File uploaded:', file.name, file.type);
-    setView('editor');
     setIsLoading(true);
-    if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      console.log('PDF detected, starting parsing...');
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const typedarray = new Uint8Array(e.target?.result as ArrayBuffer);
-        try {
-          console.log('PDF data loaded, size:', typedarray.length);
-          const pdfjsLib = (window as any).pdfjsLib;
-          if (!pdfjsLib) throw new Error('PDF.js library not loaded');
-          const loadingTask = pdfjsLib.getDocument({ data: typedarray });
-          const pdf = await loadingTask.promise;
-          console.log('PDF loaded, pages:', pdf.numPages);
-          let fullText = '';
+    try {
+      const fileName = file.name.toLowerCase();
+      const cleanDocTitle = file.name.replace(/\.[^/.]+$/, "");
+
+      if (fileName.endsWith('.joed') || file.type === 'application/json') {
+        const text = await file.text();
+        const parsedResult = parseJoed(text);
+        if (parsedResult.success && parsedResult.document) {
+          const doc = parsedResult.document;
+          setTitle(doc.metadata.title || cleanDocTitle);
+          setContent(doc.content);
+          setShapes(doc.shapes || []);
+          setSelectedShapeIds([]);
+          if (doc.pageLayout) {
+            setPageLayout(doc.pageLayout);
+          }
+          setView('editor');
+          setTimeout(() => {
+            editorRef.current?.setHtml(doc.content);
+          }, 100);
+          alert(`تم فتح مستند JOED بنجاح: "${doc.metadata.title}" (يحتوي على ${doc.shapes?.length || 0} شكل) 📐🎉`);
+        } else {
+          alert(`تعذر قراءة ملف JOED: ${parsedResult.error || 'الملف غير صالح'}`);
+        }
+      } else if (fileName.endsWith('.docx') || file.type.includes('wordprocessingml') || file.type.includes('msword')) {
+        const result = await importDocxFile(file);
+        setTitle(cleanDocTitle);
+        setContent(result.html);
+        setShapes([]);
+        setSelectedShapeIds([]);
+        setView('editor');
+        setTimeout(() => {
+          editorRef.current?.setHtml(result.html);
+        }, 100);
+        alert(`تم فتح وقراءة ملف Microsoft Word (.docx) بنجاح! 📄✨`);
+      } else if (fileName.endsWith('.html') || fileName.endsWith('.htm')) {
+        const text = await file.text();
+        setTitle(cleanDocTitle);
+        setContent(text);
+        setShapes([]);
+        setSelectedShapeIds([]);
+        setView('editor');
+        setTimeout(() => {
+          editorRef.current?.setHtml(text);
+        }, 100);
+        alert("تم استيراد ملف HTML بنجاح! 🌐");
+      } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
+        const text = await file.text();
+        const html = text.split('\n').map(l => `<p>${l || '<br>'}</p>`).join('');
+        setTitle(cleanDocTitle);
+        setContent(html);
+        setShapes([]);
+        setSelectedShapeIds([]);
+        setView('editor');
+        setTimeout(() => {
+          editorRef.current?.setHtml(html);
+        }, 100);
+        alert("تم فتح الملف النصي بنجاح! 📝");
+      } else if (fileName.endsWith('.pdf')) {
+        if ((window as any).pdfjsLib) {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          let fullHtml = '';
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const pageText = textContent.items.map((item: any) => item.str).join(' ');
-            fullText += `<p>${pageText}</p>`;
-
-            // Extract images
-            const operatorList = await page.getOperatorList();
-            const imageNames = operatorList.argsArray.filter((_: any, index: number) => operatorList.fnArray[index] === pdfjsLib.OPS.paintImageXObject).map((args: any) => args[0]);
-            
-            for (const name of imageNames) {
-              try {
-                let image = null;
-                // Retry mechanism to handle "Requesting object that isn't resolved yet"
-                for (let retry = 0; retry < 5; retry++) {
-                  try {
-                    image = await page.objs.get(name);
-                    if (image) break;
-                  } catch (e) {
-                    console.log(`Retry ${retry + 1} for image ${name}`);
-                    await new Promise(resolve => setTimeout(resolve, 200));
-                  }
-                }
-
-                if (image) {
-                  console.log('Image object:', image);
-                  // Try to find a way to get the image data
-                  if (typeof image.getDataURL === 'function') {
-                    const dataUrl = await image.getDataURL();
-                    fullText += `<img src="${dataUrl}" style="max-width: 100%;" />`;
-                  } else if (image.data) {
-                    // Fallback: This is a simplified approach and might not work for all image types
-                    console.log('Image has data property, attempting to create canvas');
-                    const canvas = document.createElement('canvas');
-                    canvas.width = image.width;
-                    canvas.height = image.height;
-                    const ctx = canvas.getContext('2d');
-                    if (ctx) {
-                      const imageData = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
-                      ctx.putImageData(imageData, 0, 0);
-                      const dataUrl = canvas.toDataURL();
-                      fullText += `<img src="${dataUrl}" style="max-width: 100%;" />`;
-                    }
-                  } else if (image.bitmap instanceof ImageBitmap) {
-                    console.log('Image has bitmap property, attempting to create canvas from bitmap');
-                    const canvas = document.createElement('canvas');
-                    canvas.width = image.width;
-                    canvas.height = image.height;
-                    const ctx = canvas.getContext('2d');
-                    if (ctx) {
-                      ctx.drawImage(image.bitmap, 0, 0);
-                      const dataUrl = canvas.toDataURL();
-                      fullText += `<img src="${dataUrl}" style="max-width: 100%;" />`;
-                    }
-                  } else {
-                    console.log('Cannot extract image, no getDataURL, data, or bitmap property. Image object:', image);
-                  }
-                }
-              } catch (e) {
-                console.error('Error extracting image:', e);
-              }
-            }
-
+            fullHtml += `<p>${pageText}</p>`;
             if (i < pdf.numPages) {
-              fullText += '<hr class="page-break" contenteditable="false">';
+              fullHtml += '<hr class="page-break" contenteditable="false">';
             }
           }
-          console.log('PDF parsing finished, text length:', fullText.length);
-          setContent(fullText);
-          setTitle(file.name.replace('.pdf', ''));
-        } catch (error) {
-          console.error('Error parsing PDF:', error);
-          alert('حدث خطأ أثناء فتح ملف PDF: ' + (error instanceof Error ? error.message : String(error)));
-        } finally {
-          setIsLoading(false);
+          setTitle(cleanDocTitle);
+          setContent(fullHtml);
+          setShapes([]);
+          setSelectedShapeIds([]);
+          setView('editor');
+          setTimeout(() => {
+            editorRef.current?.setHtml(fullHtml);
+          }, 100);
+          alert("تم استيراد صفحات ملف PDF بنجاح! 📑");
+        } else {
+          alert("مكتبة قراءة PDF غير جاهزة حالياً.");
         }
-      };
-      reader.readAsArrayBuffer(file);
-    } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-      console.log('Text file detected');
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result as string;
-        setContent(text);
-        setTitle(file.name.replace('.txt', ''));
-        setIsLoading(false);
-      };
-      reader.readAsText(file);
-    } else if (file.type === 'text/html' || file.name.endsWith('.html')) {
-      console.log('HTML file detected');
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const html = e.target?.result as string;
+      } else {
+        const text = await file.text();
+        const html = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+        setTitle(cleanDocTitle);
         setContent(html);
-        setTitle(file.name.replace('.html', ''));
-        setIsLoading(false);
-      };
-      reader.readAsText(file);
-    } else {
-      console.log('Unsupported file type:', file.type);
-      alert('عذراً، هذا النوع من الملفات غير مدعوم حالياً. يرجى اختيار ملف PDF أو نصي.');
+        setShapes([]);
+        setSelectedShapeIds([]);
+        setView('editor');
+        setTimeout(() => {
+          editorRef.current?.setHtml(html);
+        }, 100);
+      }
+    } catch (err: any) {
+      console.error("Error opening document:", err);
+      alert(`فشل فتح المستند: ${err.message || 'خطأ غير متوقع'}`);
+    } finally {
       setIsLoading(false);
     }
   };
 
-  const [exportLink, setExportLink] = useState<string | null>(null);
+  const handleOpenDocxClick = () => {
+    hiddenFileInputRef.current?.click();
+  };
+
+  const handleOpenJoedClick = () => {
+    hiddenFileInputRef.current?.click();
+  };
+
+  const handlePrint = () => {
+    const currentHtml = editorRef.current?.getHtml() || content;
+    printDocument(currentHtml, {
+      title,
+      orientation: pageLayout.orientation,
+      margins: pageLayout.margins
+    });
+  };
+
+  const handleExportWord = () => {
+    const currentHtml = editorRef.current?.getHtml() || content;
+    exportToWord(currentHtml, title, {
+      orientation: pageLayout.orientation
+    });
+  };
+
+  const handleExportHtml = () => {
+    const currentHtml = editorRef.current?.getHtml() || content;
+    const standaloneHtml = exportToStandaloneHtml({
+      title: title || 'مستند Joe Word',
+      content: currentHtml,
+      shapes,
+      pageLayout
+    });
+    const blob = new Blob([standaloneHtml], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title || 'document'}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportMarkdown = () => {
+    const currentHtml = editorRef.current?.getHtml() || content;
+    const md = convertToMarkdown(currentHtml, shapes);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title || 'document'}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const handleExportTxt = () => {
     const parser = new DOMParser();
@@ -432,7 +620,6 @@ const App: React.FC = () => {
         }
       }
       if (finalTranscript) {
-        // Append text to editor
         const currentContent = editorRef.current?.getHtml() || '';
         editorRef.current?.setHtml(currentContent + ' ' + finalTranscript);
       }
@@ -442,7 +629,7 @@ const App: React.FC = () => {
       console.error("Speech recognition error:", event.error);
       setIsDictating(false);
       if (event.error === 'not-allowed') {
-        alert("لم يتم السماح بالوصول إلى الميكروفون. يرجى تفعيل إذن الميكروفون من إعدادات المتصفح أو فتح التطبيق في علامة تبويب جديدة.");
+        alert("لم يتم السماح بالوصول إلى الميكروفون.");
       } else {
         alert("حدث خطأ في التعرف على الصوت: " + event.error);
       }
@@ -457,390 +644,92 @@ const App: React.FC = () => {
     setIsDictating(true);
   };
 
-  const executeActualPdfExport = async (finalPages: Node[][]) => {
+  const handleExportPdf = async () => {
+    const currentHtml = editorRef.current?.getHtml() || content;
+    if (!currentHtml || !currentHtml.trim() || currentHtml === '<p><br></p>') {
+      alert("المستند فارغ! يرجى كتابة أو إدراج محتوى قبل تصدير ملف PDF.");
+      return;
+    }
+
     setIsExporting(true);
-    setExportProgress({ current: 0, total: finalPages.length });
-    setExportLink(null);
+    setExportProgress({ current: 1, total: Math.max(totalPages, 1) });
 
     try {
-      // Ensure all web fonts are fully loaded prior to rendering
-      if (document.fonts) {
-        await document.fonts.ready;
+      const success = await exportDocumentToPdf(currentHtml, {
+        title: title || 'مستند Joe Word',
+        orientation: pageLayout.orientation,
+        margins: pageLayout.margins,
+        shapes,
+        onProgress: (current, total) => {
+          setExportProgress({ current, total });
+        }
+      });
+
+      if (!success) {
+        alert("تم فتح نافذة الطباعة كبديل عالي الجودة لحفظ المستند كملف PDF.");
       }
-
-      const isPortrait = pageLayout.orientation === 'portrait';
-      const pdfWidthMm = isPortrait ? 210 : 297;
-      const pdfHeightMm = isPortrait ? 297 : 210;
-
-      // Create a temporary container visible in viewport but fully hidden behind main elements (z-index -9999).
-      // WebKit and Safari demand the element be fully inside the viewport bounds for getBoundingClientRect()
-      // to yield correct dimensions and coordinates, preventing blank pages.
-      const tempContainer = document.createElement('div');
-      tempContainer.style.position = 'fixed';
-      tempContainer.style.left = '0px';
-      tempContainer.style.top = '0px';
-      tempContainer.style.zIndex = '-9999';
-      tempContainer.style.opacity = '1';
-      tempContainer.style.backgroundColor = '#ffffff';
-      
-      const widthPx = isPortrait ? 794 : 1123;
-      const heightPx = isPortrait ? 1123 : 794;
-      
-      tempContainer.style.width = `${widthPx}px`;
-      tempContainer.style.minHeight = `${heightPx}px`;
-      tempContainer.style.height = `${heightPx}px`;
-      tempContainer.style.boxSizing = 'border-box';
-      tempContainer.style.overflow = 'hidden';
-
-      // Apply current layout padding/margins
-      if (pageLayout.margins === 'normal') {
-        tempContainer.style.padding = '80px';
-      } else if (pageLayout.margins === 'narrow') {
-        tempContainer.style.padding = '32px';
-      } else {
-        tempContainer.style.padding = '120px';
-      }
-
-      tempContainer.style.fontFamily = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
-      tempContainer.style.direction = 'rtl';
-      tempContainer.style.textAlign = 'right';
-      tempContainer.className = 'ql-editor printable-area export-pdf-container';
-
-      // Ensure appropriate typography, black text color on white background, normal letter spacing, and proper ligatures
-      const styleTag = document.createElement('style');
-      styleTag.id = 'pdf-export-styles';
-      styleTag.innerHTML = `
-        .export-pdf-container {
-          background-color: #ffffff !important;
-          /* color removed to keep inline colors */
-        }
-        .export-pdf-container, .export-pdf-container * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-          font-family: 'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif !important;
-          letter-spacing: normal !important;
-          word-spacing: normal !important;
-          font-variant-ligatures: common-ligatures !important;
-          text-rendering: optimizeLegibility !important;
-          -webkit-font-smoothing: antialiased !important;
-          direction: rtl !important;
-          text-align: right !important;
-        }
-        .export-pdf-container img {
-          max-width: 100% !important;
-          height: auto !important;
-          display: block !important;
-        }
-        .export-pdf-container .page-break {
-          display: none !important;
-        }
-      `;
-      document.head.appendChild(styleTag);
-      document.body.appendChild(tempContainer);
-
-      const pdf = new jsPDF(isPortrait ? 'p' : 'l', 'mm', 'a4');
-      setExportProgress({ current: 1, total: finalPages.length });
-
-      // Dynamically select pixel ratio and delay based on document size to prevent mobile canvas crashes
-      const pageCount = finalPages.length;
-      let pixelRatio = 1.5;
-      let delayMs = 100;
-      
-      if (pageCount > 100) {
-        pixelRatio = 0.6; // Low memory footprint for massive documents
-        delayMs = 40;
-      } else if (pageCount > 50) {
-        pixelRatio = 0.8;
-        delayMs = 60;
-      } else if (pageCount > 20) {
-        pixelRatio = 1.0;
-        delayMs = 100;
-      } else if (pageCount > 10) {
-        pixelRatio = 1.2;
-        delayMs = 100;
-      }
-
-      for (let i = 0; i < finalPages.length; i++) {
-        tempContainer.innerHTML = '';
-        
-        // Append cloned nodes
-        finalPages[i].forEach(node => {
-          tempContainer.appendChild(node.cloneNode(true));
-        });
-
-        // Update progress state
-        setExportProgress({ current: i + 1, total: finalPages.length });
-
-        // Let images or render cycles settle
-        await new Promise(r => setTimeout(r, delayMs));
-
-        // Use html2canvas to render the page to a canvas.
-        const canvas = await html2canvas(tempContainer, {
-          scale: pixelRatio,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-          width: widthPx,
-          height: heightPx,
-          allowTaint: true
-        });
-
-        const pageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-
-        // Force free canvas memory immediately to protect iOS/Safari against graphics leaks
-        canvas.width = 0;
-        canvas.height = 0;
-
-        if (i > 0) {
-          pdf.addPage();
-        }
-
-        pdf.addImage(pageDataUrl, 'JPEG', 0, 0, pdfWidthMm, pdfHeightMm);
-      }
-
-      // Cleanup temp container and temporary styles
-      if (tempContainer.parentNode) {
-        tempContainer.parentNode.removeChild(tempContainer);
-      }
-      if (styleTag.parentNode) {
-        styleTag.parentNode.removeChild(styleTag);
-      }
-
-      const pdfBlob = pdf.output('blob');
-      const safeTitle = (title || 'document').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const fileName = `${safeTitle}.pdf`;
-
-      try {
-        pdf.save(fileName);
-        const localUrl = URL.createObjectURL(pdfBlob);
-        setExportLink(localUrl);
-        setIsExporting(false);
-        setExportProgress(null);
-        return;
-      } catch (localError) {
-        console.warn("Local export failed, trying upload...", localError);
-        if (!supabase) {
-          alert('فشل التنزيل المحلي. يرجى إضافة مفاتيح Supabase للرفع التلقائي.');
-          setIsExporting(false);
-          setExportProgress(null);
-          return;
-        }
-
-        const uploadFileName = `${Date.now()}_${safeTitle}.pdf`;
-        const { data, error } = await supabase.storage
-          .from('documents')
-          .upload(uploadFileName, pdfBlob, {
-            contentType: 'application/pdf',
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (error) {
-          if (error.message.includes('Bucket not found')) {
-            throw new Error('لم يتم العثور على مساحة تخزين (Bucket) باسم "documents".');
-          }
-          throw error;
-        }
-
-        const { data: publicUrlData } = supabase.storage
-          .from('documents')
-          .getPublicUrl(uploadFileName);
-
-        if (publicUrlData && publicUrlData.publicUrl) {
-          setExportLink(publicUrlData.publicUrl);
-        } else {
-          throw new Error('Failed to get public URL');
-        }
-      }
-
     } catch (err: any) {
-      console.error("Error generating PDF:", err);
-      alert(err.message || 'حدث خطأ أثناء تصدير PDF.');
+      console.error('Error generating PDF:', err);
+      handlePrint();
     } finally {
       setIsExporting(false);
       setExportProgress(null);
     }
   };
 
-  const handleExportPdf = async () => {
-    const element = document.querySelector('.ql-editor') as HTMLElement;
-    if (!element) return;
-
-    const isPortrait = pageLayout.orientation === 'portrait';
-    const widthPx = isPortrait ? 794 : 1123;
-    const padding = pageLayout.margins === 'normal' ? 160 : pageLayout.margins === 'narrow' ? 64 : 240;
-    const maxPageHeight = (isPortrait ? 1123 : 794) - padding;
-
-    // Create a temporary container to accurately measure node heights
-    const measureContainer = document.createElement('div');
-    measureContainer.className = 'ql-editor printable-area export-pdf-container';
-    measureContainer.style.position = 'fixed';
-    measureContainer.style.left = '-9999px';
-    measureContainer.style.top = '0px';
-    measureContainer.style.width = `${widthPx}px`;
-    measureContainer.style.padding = `${padding / 2}px`;
-    measureContainer.style.fontFamily = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
-    measureContainer.style.direction = 'rtl';
-    measureContainer.style.textAlign = 'right';
-    measureContainer.style.boxSizing = 'border-box';
-    document.body.appendChild(measureContainer);
-
-    const childNodes = Array.from(element.childNodes);
-    const pages: Node[][] = [];
-    let currentPage: Node[] = [];
-    let currentHeightSum = 0;
-
-    for (const node of childNodes) {
-      if (node instanceof HTMLElement && (node.classList.contains('page-break') || node.tagName === 'HR')) {
-        if (currentPage.length > 0) {
-          pages.push(currentPage);
-        }
-        currentPage = [];
-        currentHeightSum = 0;
-        continue;
-      }
-      
-      const clonedNode = node.cloneNode(true) as HTMLElement;
-      measureContainer.appendChild(clonedNode);
-      const nodeHeight = clonedNode.getBoundingClientRect ? clonedNode.getBoundingClientRect().height : 24;
-      measureContainer.removeChild(clonedNode);
-
-      if (currentPage.length > 0 && currentHeightSum + nodeHeight > maxPageHeight) {
-        pages.push(currentPage);
-        currentPage = [node];
-        currentHeightSum = nodeHeight;
-      } else {
-        currentPage.push(node);
-        currentHeightSum += nodeHeight;
-      }
-    }
-    
-    document.body.removeChild(measureContainer);
-
-    if (currentPage.length > 0) {
-      pages.push(currentPage);
-    }
-
-    const nonSeededPages = pages.filter(p => p.length > 0 || p.some(n => n.textContent?.trim() !== ''));
-    const finalPages = nonSeededPages.length > 0 ? nonSeededPages : [[]];
-
-    if (finalPages.length > 15) {
-      setPendingPageCount(finalPages.length);
-      setPendingPages(finalPages);
-      setShowLongDocModal(true);
-      return;
-    }
-
-    await executeActualPdfExport(finalPages);
-  };
-
-  const handleSave = () => {
-    const blob = new Blob([content], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handlePrint = () => {
-    printDocument(content, {
-      title: title || 'مستند بدون عنوان',
-      orientation: pageLayout.orientation,
-      margins: pageLayout.margins
-    });
-  };
-
-  if (!user) return <Auth />;
-
   return (
-    <div className={`fixed inset-0 flex flex-col overflow-hidden ${isDarkMode ? 'dark' : ''}`}>
-      {isLoading && (
-        <div className="fixed inset-0 bg-white/80 flex items-center justify-center z-50">
-          <div className="text-2xl font-bold text-primary-600">جاري تحميل الملف...</div>
-        </div>
-      )}
-      {isExporting && (
-        <div className="fixed inset-0 bg-white/95 flex flex-col items-center justify-center z-50 gap-4">
-          <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
-          <div className="text-2xl font-bold text-primary-600">جاري تصدير ورفع الملف (PDF)...</div>
-          {exportProgress && exportProgress.total > 0 && (
-            <div className="text-lg font-semibold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-full shadow-sm">
-              جاري معالجة الصفحة {exportProgress.current} من {exportProgress.total}
-            </div>
-          )}
-        </div>
-      )}
-      {exportLink && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 max-w-lg w-full text-center shadow-xl">
-            <h3 className="text-xl font-bold text-slate-800 mb-4">تم تصدير الملف بنجاح!</h3>
-            <p className="text-slate-600 mb-6">لقد تم رفع ملف الـ PDF. يمكنك تحميله من خلال الرابط التالي:</p>
-            <div className="bg-slate-100 p-3 rounded text-left overflow-x-auto text-sm text-slate-800 mb-6">
-              <a href={exportLink} target="_blank" rel="noreferrer" className="text-primary-600 hover:underline">
-                {exportLink}
-              </a>
-            </div>
-            <div className="flex gap-4 justify-center">
-              <a 
-                href={exportLink} 
-                target="_blank" 
-                rel="noreferrer"
-                className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded font-medium transition-colors"
-                onClick={() => setExportLink(null)}
-              >
-                فتح / تحميل
-              </a>
-              <button 
-                onClick={() => setExportLink(null)}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-6 py-2 rounded font-medium transition-colors"
-              >
-                إغلاق
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <div className="flex flex-col flex-1 bg-slate-100 dark:bg-slate-900 overflow-hidden">
+    <div className={`min-h-screen flex flex-col font-sans ${isDarkMode ? 'dark' : ''} bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100`}>
+      {/* Hidden file input for Ribbon/Header file picking */}
+      <input 
+        type="file" 
+        ref={hiddenFileInputRef} 
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleOpenDocument(file);
+          if (hiddenFileInputRef.current) hiddenFileInputRef.current.value = '';
+        }} 
+        accept=".joed,.docx,.pdf,.txt,.html,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/json" 
+        className="hidden" 
+      />
+
+      {/* Main App Container */}
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
         {view === 'dashboard' ? (
-          <div className="flex-1 overflow-y-auto">
-            <Header 
-              title="لوحة التحكم" 
-              onTitleChange={() => {}} 
-              onNewDocument={handleCreateNewDocument}
-              onOpenDocument={handleOpenDocument}
-              onExportPdf={() => {}}
-              onSave={() => {}}
-              onPrint={() => {}}
-            />
-            <DocumentList 
-              onSelect={handleSelectDocument} 
-              onNewDocument={handleCreateNewDocument} 
-              onOpenDocument={handleOpenDocument}
-            />
-          </div>
+          <DocumentList 
+            onSelectDocument={handleSelectDocument}
+            onCreateDocument={handleCreateNewDocument}
+            onOpenDocument={handleOpenDocument}
+          />
         ) : (
-          <div className="flex flex-col flex-1 overflow-hidden relative">
-            {!isReadingMode && (
-              <div className="shrink-0 z-10 w-full bg-white overflow-hidden shadow-sm no-print">
-                {/* Top Bar */}
-                <Header 
-                  title={title} 
-                  onTitleChange={setTitle} 
-                  onNewDocument={handleCreateNewDocument}
-                  onOpenDocument={handleOpenDocument}
-                  onExportPdf={handleExportPdf}
-                  onSave={handleSaveToFirestore}
-                  onPrint={handlePrint}
-                />
-                
-                {/* Ribbon */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* Pinned Top Navigation Bar (Header + Ribbon with File, Home, Insert, Layout) */}
+            <div className="sticky top-0 z-50 shrink-0 w-full bg-white dark:bg-slate-900 shadow-xs border-b border-slate-200 dark:border-slate-800 no-print">
+              <Header 
+                title={title} 
+                onTitleChange={setTitle} 
+                onNewDocument={() => handleCreateNewDocument()} 
+                onOpenDocument={handleOpenDocument} 
+                onExportWord={handleExportWord} 
+                onExportPdf={handleExportPdf} 
+                onSave={handleSaveToFirestore}
+                onSaveJoed={handleSaveJoed}
+                onPrint={handlePrint}
+              />
+
+              {/* Ribbon Controls */}
+              {!isReadingMode && (
                 <Ribbon 
                   onSave={handleSaveToFirestore}
+                  onSaveJoed={handleSaveJoed}
+                  onOpenDocx={handleOpenDocxClick}
+                  onOpenJoed={handleOpenJoedClick}
                   onPrint={handlePrint}
+                  onExportWord={handleExportWord}
                   onExportPdf={handleExportPdf}
                   onExportTxt={handleExportTxt}
+                  onExportHtml={handleExportHtml}
+                  onExportMarkdown={handleExportMarkdown}
+                  onInsertShape={handleInsertShape}
                   onDictate={toggleDictation}
                   isDictating={isDictating}
                   onNewDocument={handleCreateNewDocument}
@@ -860,25 +749,23 @@ const App: React.FC = () => {
                       editorRef.current?.insertPageBreak();
                     } else if (name === 'toggleReadingView') {
                       setIsReadingMode(!isReadingMode);
-                    } else if (name === 'toggleRuler') {
-                      console.log('Toggle ruler');
-                      // Add logic here
-                    } else if (name === 'toggleGrid') {
-                      console.log('Toggle grid');
-                      // Add logic here
                     } else {
                       editorRef.current?.format(name, value);
                     }
                   }}
                   onUndo={() => {
-                    editorRef.current?.undo();
+                    if (selectedShapeIds.length > 0) {
+                      handleShapesUndo();
+                    } else {
+                      editorRef.current?.undo();
+                    }
                   }}
                   onRedo={() => {
                     editorRef.current?.redo();
                   }}
                 />
-              </div>
-            )}
+              )}
+            </div>
 
             {isReadingMode && (
               <div className="absolute top-4 left-4 z-50 no-print">
@@ -893,7 +780,7 @@ const App: React.FC = () => {
 
             {/* Main Content Area */}
             <div className="flex flex-1 overflow-hidden bg-[#f3f2f1] relative">
-              {/* Navigation Pane (Optional) */}
+              {/* Navigation Pane */}
               {showNavigation && !isReadingMode && (
                 <div className="hidden md:block no-print">
                   <NavigationPane headings={headings} />
@@ -911,24 +798,59 @@ const App: React.FC = () => {
                     documentTitle={title}
                     onUpdateTitle={setTitle}
                     onSetContent={setContent}
+                    currentShapes={shapes}
+                    onAddShapes={(newShapes) => handleUpdateShapes([...shapes, ...newShapes])}
                   />
                 </div>
               )}
 
-              {/* Document Area */}
-              <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-8 flex justify-center scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+              {/* Document Page Canvas Area */}
+              <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-8 flex flex-col items-center scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+                
+                {/* Floating Shapes Styling Toolbar */}
+                {selectedShapeIds.length > 0 && !isReadingMode && (
+                  <div className="sticky top-2 z-40 mb-3 no-print max-w-2xl w-full">
+                    <ShapesToolbar 
+                      selectedShapes={shapes.filter(s => selectedShapeIds.includes(s.id))}
+                      allShapes={shapes}
+                      onUpdateShapes={handleUpdateShapes}
+                      onDeleteSelected={handleDeleteSelectedShapes}
+                      onDuplicateSelected={handleDuplicateSelectedShapes}
+                      onGroupSelected={handleGroupSelectedShapes}
+                      onUngroupSelected={handleUngroupSelectedShapes}
+                    />
+                  </div>
+                )}
+
                 <div 
-                  className={`bg-white overflow-hidden shadow-[0_0_10px_rgba(0,0,0,0.1)] transition-all duration-300 hover:shadow-[0_0_15px_rgba(0,0,0,0.15)] mb-8
+                  className={`bg-white shadow-[0_0_12px_rgba(0,0,0,0.12)] transition-all duration-300 hover:shadow-[0_0_18px_rgba(0,0,0,0.18)] mb-8 relative
                     ${pageLayout.orientation === 'portrait' ? 'w-full max-w-full md:max-w-[816px]' : 'w-full max-w-full md:max-w-[1056px]'}
                     ${pageLayout.margins === 'normal' ? 'p-4 sm:p-8 md:p-[96px]' : pageLayout.margins === 'narrow' ? 'p-2 sm:p-4 md:p-8' : 'p-6 sm:p-12 md:p-[128px]'}
                   `}
                   style={{
                     minHeight: `${Math.max(
-                      pageLayout.orientation === 'portrait' ? 450 : 350,
-                      Math.floor((pageLayout.orientation === 'portrait' ? 450 : 350) + (wordCount * 1.5))
+                      pageLayout.orientation === 'portrait' ? 850 : 600,
+                      Math.floor((pageLayout.orientation === 'portrait' ? 850 : 600) + (wordCount * 1.5))
                     )}px`
                   }}
                 >
+                  {/* Interactive Shapes Layer with drag, resize, rotate, text insertion */}
+                  <ShapesLayer 
+                    shapes={shapes}
+                    onChange={handleUpdateShapes}
+                    onShapesChange={handleUpdateShapes}
+                    selectedIds={selectedShapeIds}
+                    onSelect={setSelectedShapeIds}
+                    onSelectIds={setSelectedShapeIds}
+                    containerWidth={pageLayout.orientation === 'portrait' ? 816 : 1056}
+                    containerHeight={Math.max(
+                      pageLayout.orientation === 'portrait' ? 850 : 600,
+                      Math.floor((pageLayout.orientation === 'portrait' ? 850 : 600) + (wordCount * 1.5))
+                    )}
+                    disabled={isReadingMode}
+                  />
+
+                  {/* Document Editor */}
                   <Editor 
                     ref={editorRef} 
                     value={content} 
@@ -938,12 +860,14 @@ const App: React.FC = () => {
                   />
                 </div>
               </main>
+
               {selectedImage && (
                 <div className="w-64 bg-white border-l border-slate-200 p-4 h-full no-print">
                   <ImagePropertiesPanel image={selectedImage} onClose={() => setSelectedImage(null)} />
                 </div>
               )}
             </div>
+
             <div className="no-print">
               <StatusBar wordCount={wordCount} activePage={activePage} totalPages={totalPages} />
             </div>
@@ -991,6 +915,10 @@ const App: React.FC = () => {
                 <span className="font-semibold dark:text-white">{wordCount}</span>
               </div>
               <div className="flex justify-between border-b pb-2 dark:border-slate-700">
+                <span className="text-slate-600 dark:text-slate-400">الأشكال الهندسية:</span>
+                <span className="font-semibold dark:text-white">{shapes.length} شكل</span>
+              </div>
+              <div className="flex justify-between border-b pb-2 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">الأحرف (مع مسافات):</span>
                 <span className="font-semibold dark:text-white">{content.replace(/<[^>]*>?/gm, '').length}</span>
               </div>
@@ -1015,48 +943,24 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Long Document Export Modal */}
-      {showLongDocModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 no-print">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl p-6 max-w-lg w-full" dir="rtl">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-              ⚠️ تنبيه: مستند طويل جداً ({pendingPageCount} صفحة)
-            </h2>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-6 leading-relaxed">
-              لقد تم رصد أن المستند يحتوي على <strong>{pendingPageCount} صفحة</strong>. 
-              عند تصدير المستندات الطويلة جداً تلقائياً على المتصفح أو الهاتف، قد تنفد الذاكرة المخصصة للرسومات (Canvas Memory) وتظهر بعض الصفحات فارغة تماماً.
-              <br /><br />
-              <strong>الخيار الموصى به والأفضل بنسبة 100%:</strong>
-              <br />
-              انقر على <strong>"طباعة وحفظ كـ PDF"</strong> ثم اختر <strong>"حفظ بتنسيق PDF"</strong> من نافذة الطباعة التابعة لنظام هاتفك أو متصفحك. هذا يضمن الحصول على ملف ذي جودة متناهية وبنصوص حقيقية قابلة للنسخ والبحث بدون أي استهلاك لذاكرة الجهاز.
+      {/* Exporting PDF Modal / Loader */}
+      {isExporting && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs no-print">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center" dir="rtl">
+            <div className="w-14 h-14 rounded-full bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-4 animate-spin">
+              <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10" strokeDasharray="60" strokeDashoffset="20" strokeLinecap="round" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">جاري إنشاء وتصدير ملف PDF...</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              {exportProgress ? `معالجة الصفحة ${exportProgress.current} من ${exportProgress.total}...` : 'يرجى الانتظار لحظات...'}
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-end">
-              <button 
-                onClick={() => {
-                  setShowLongDocModal(false);
-                  handlePrint();
-                }}
-                className="bg-primary-600 text-white hover:bg-primary-700 px-4 py-2.5 rounded-lg font-medium transition-colors flex-1"
-              >
-                🖨️ طباعة وحفظ كـ PDF (موصى به للغاية)
-              </button>
-              <button 
-                onClick={() => {
-                  setShowLongDocModal(false);
-                  if (pendingPages) {
-                    executeActualPdfExport(pendingPages);
-                  }
-                }}
-                className="bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600 px-4 py-2.5 rounded-lg font-medium transition-colors"
-              >
-                تصدير تلقائي على أي حال
-              </button>
-              <button 
-                onClick={() => setShowLongDocModal(false)}
-                className="bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 px-4 py-2.5 rounded-lg font-medium transition-colors"
-              >
-                إلغاء
-              </button>
+            <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div 
+                className="bg-rose-600 h-full transition-all duration-300"
+                style={{ width: `${exportProgress ? (exportProgress.current / exportProgress.total) * 100 : 50}%` }}
+              />
             </div>
           </div>
         </div>

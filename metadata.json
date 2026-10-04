@@ -1,6 +1,6 @@
 {
   "name": "Joe Word",
-  "description": "Joe Word — محرر نصوص عبر الإنترنت يشبه Microsoft Word بواجهة بسيطة وأنيقة، مع مساعد ذكي مدمج، التنسيق، التصدير إلى PDF، والحفظ التلقائي.",
+  "description": "Joe Word — محرر نصوص احترافي بنظام الأشكال Shapes، وصيغة الملفات الأصلية JOED، مع استيراد DOCX وتصدير متكامل ومساعد ذكي.",
   "requestFramePermissions": [
     "microphone"
   ],

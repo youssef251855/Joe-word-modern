@@ -16,7 +16,7 @@ Quill.register(PageBreakBlot);
 
 interface EditorProps {
   value: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   onWordCount?: (count: number) => void;
   onImageSelect?: (img: HTMLImageElement | null) => void;
 }
@@ -69,7 +69,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
       quillInstance.current.on('text-change', () => {
         const text = quillInstance.current?.getText() || '';
         const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
-        onChange(quillInstance.current?.root.innerHTML || '');
+        if (typeof onChange === 'function') {
+          onChange(quillInstance.current?.root.innerHTML || '');
+        }
         if (onWordCount) onWordCount(words);
       });
 
@@ -160,7 +162,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
     },
     clear: () => {
       quillInstance.current?.setText('');
-      onChange('');
+      if (typeof onChange === 'function') {
+        onChange('');
+      }
     },
     insertDate: () => {
       quillInstance.current?.focus();
@@ -191,7 +195,9 @@ const Editor = forwardRef<EditorHandle, EditorProps>(({ value, onChange, onWordC
     setHtml: (html: string) => {
       if (quillInstance.current) {
         quillInstance.current.clipboard.dangerouslyPasteHTML(html);
-        onChange(quillInstance.current.root.innerHTML);
+        if (typeof onChange === 'function') {
+          onChange(quillInstance.current.root.innerHTML);
+        }
       }
     },
     format: (name: string, value: any) => {
